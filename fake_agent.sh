@@ -4,7 +4,7 @@
 # Fake Nezha Agent 一键安装/卸载脚本 (基于 screen)
 #
 # 作者: Gemini
-# 版本: v2.0.1 (稳定版)
+# 版本: v2.1.0 (最终稳定版)
 #================================================================================
 
 # --- 全局变量和颜色定义 ---
@@ -118,19 +118,16 @@ get_fake_config() {
 # 彻底清理旧环境
 cleanup_old_install() {
     info "正在进行彻底清理，确保一个干净的环境..."
-    systemctl stop nezha-fake-agent.service >/dev/null 2>&1
-    systemctl disable nezha-fake-agent.service >/dev/null 2>&1
-    rm -f /etc/systemd/system/nezha-fake-agent.service >/dev/null 2>&1
-    systemctl daemon-reload
-    
     # 强制杀死可能存在的 screen 会话
     if screen -ls | grep -q "$SESSION_NAME"; then
         info "发现旧的 screen 会话，正在终止..."
         screen -S "$SESSION_NAME" -X quit
     fi
-
     # 删除旧的安装目录
     rm -rf "$INSTALL_PATH"
+    # 清理旧的 systemd 服务 (以防万一)
+    rm -f /etc/systemd/system/nezha-fake-agent.service >/dev/null 2>&1
+    systemctl daemon-reload
     success "清理完成！"
 }
 
@@ -163,14 +160,9 @@ install_agent() {
     chmod +x "${INSTALL_PATH}/${agent_exec_name}"
     rm "/tmp/${AGENT_ZIP_NAME}"
     
-    info "正在创建完整的 config.yaml (包含所有配置)..."
+    info "正在创建 config.yaml (仅用于伪造数据)..."
     cat > "${INSTALL_PATH}/config.yaml" <<EOF
 # 由一键安装脚本生成
-# --- 面板连接信息 (最终修复：为字符串值加上引号) ---
-server: "${NZ_SERVER}"
-secret: "${NZ_CLIENT_SECRET}"
-tls: ${NZ_TLS}
-
 # --- 核心伪造配置 ---
 disable_auto_update: true
 fake: true
@@ -188,8 +180,13 @@ networkmultiple: ${FAKE_NET_MULTI:-1000}
 ip: "${FAKE_IP:-8.8.8.8}"
 EOF
 
-    info "正在启动 screen 会话以在后台运行 Agent..."
-    screen -dmS "$SESSION_NAME" "${INSTALL_PATH}/${agent_exec_name}" -c "${INSTALL_PATH}/config.yaml"
+    info "正在通过命令行参数启动 screen 会话..."
+    # 终极修复：通过命令行参数直接注入核心配置，彻底绕开所有配置文件和环境变量的 Bug
+    screen -dmS "$SESSION_NAME" "${INSTALL_PATH}/${agent_exec_name}" \
+        --server "${NZ_SERVER}" \
+        --secret "${NZ_CLIENT_SECRET}" \
+        --tls="${NZ_TLS}" \
+        -c "${INSTALL_PATH}/config.yaml"
 
     sleep 2
     if screen -ls | grep -q "$SESSION_NAME"; then
@@ -198,13 +195,13 @@ EOF
         info ""
         info "--- Agent 管理命令 ---"
         info "查看运行日志: screen -r ${SESSION_NAME}"
-        info "(查看后按 Ctrl+A, 再按 D 即可退出日志界面，程序会继续在后台运行)"
+        info "(查看后按 Ctrl+A, 再按 D 即可退出日志界面)"
         info "停止 Agent:  screen -S ${SESSION_NAME} -X quit"
         info "--------------------"
     else
         err "服务启动失败！这非常意外。"
         err "请尝试手动运行启动命令查看报错: "
-        err "${INSTALL_PATH}/${agent_exec_name} -c ${INSTALL_PATH}/config.yaml"
+        err "${INSTALL_PATH}/${agent_exec_name} --server \"${NZ_SERVER}\" --secret \"${NZ_CLIENT_SECRET}\" --tls=\"${NZ_TLS}\" -c \"${INSTALL_PATH}/config.yaml\""
     fi
 }
 
@@ -217,7 +214,7 @@ uninstall_agent() {
 main() {
     clear
     echo "========================================="
-    echo "  Fake Nezha Agent 一键管理脚本 (v2.0.1 稳定版)"
+    echo "  Fake Nezha Agent 一键管理脚本 (v2.1.0 稳定版)"
     echo "         (基于 screen 运行)"
     echo "========================================="
     echo ""
