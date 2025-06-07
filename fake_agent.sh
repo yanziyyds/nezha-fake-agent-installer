@@ -4,14 +4,13 @@
 # Fake Nezha Agent 一键安装/卸载脚本
 #
 # 作者: Gemini
-# 版本: v0.1.6 (最终修复版)
+# 版本: v0.1.7 (最终修复版)
 #================================================================================
 
 # --- 全局变量和颜色定义 ---
 red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
-cyan='\033[0;36m'
 plain='\033[0m'
 
 # 安装路径
@@ -26,7 +25,6 @@ AGENT_URL_TEMPLATE="https://github.com/dysf888/fake-nezha-agent-v1/releases/late
 err() { echo -e "${red}[错误] $1${plain}"; }
 success() { echo -e "${green}[成功] $1${plain}"; }
 info() { echo -e "${yellow}[信息] $1${plain}"; }
-debug() { echo -e "${cyan}[调试] $1${plain}"; }
 
 check_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -53,7 +51,7 @@ check_and_install_deps() {
     
     if command -v apt-get >/dev/null 2>&1; then
         info "正在使用 apt-get 安装..."
-        apt-get update
+        apt-get update -y
         if ! apt-get install -y "${deps_to_install[@]}"; then
              err "依赖安装失败，请检查您的软件源设置！"; exit 1
         fi
@@ -62,7 +60,7 @@ check_and_install_deps() {
         if ! yum install -y "${deps_to_install[@]}"; then
              err "依赖安装失败！"; exit 1
         fi
-    elif command -v dnf >/dev/null 2>&1; then # <--- FIX: Added 'then' keyword
+    elif command -v dnf >/dev/null 2>&1; then
         info "正在使用 dnf 安装..."
         if ! dnf install -y "${deps_to_install[@]}"; then
              err "依赖安装失败！"; exit 1
@@ -80,7 +78,6 @@ check_and_install_deps() {
 }
 
 detect_arch() {
-    # ... (此函数无问题，保持原样)
     case "$(uname -s)" in Linux) os="linux";; *) err "不支持的操作系统: $(uname -s)"; exit 1;; esac
     case "$(uname -m)" in x86_64|amd64) arch="amd64";; aarch64|arm64) arch="arm64";; i386|i686) arch="386";; *arm*) arch="arm";; *) err "不支持的架构: $(uname -m)"; exit 1;; esac
     AGENT_URL=$(echo "$AGENT_URL_TEMPLATE" | sed "s/{os}/$os/" | sed "s/{arch}/$arch/")
@@ -88,12 +85,13 @@ detect_arch() {
 }
 
 get_server_config() {
-    # ... (此函数无问题，保持原样)
     info "请选择如何提供面板连接信息："; echo "1) 粘贴从面板获取的完整一键安装命令 (推荐)"; echo "2) 手动输入服务器地址、端口和密钥"
     read -rp "请输入选项 [1-2]: " choice
     if [[ "$choice" == "1" ]]; then
         read -rp "请粘贴命令: " full_cmd
-        NZ_SERVER=$(echo "$full_cmd" | grep -oP 'NZ_SERVER=\K[^ ]+'); NZ_CLIENT_SECRET=$(echo "$full_cmd" | grep -oP 'NZ_CLIENT_SECRET=\K[^ ]+'); NZ_TLS_RAW=$(echo "$full_cmd" | grep -oP 'NZ_TLS=\K[^ ]+')
+        NZ_SERVER=$(echo "$full_cmd" | grep -oP 'NZ_SERVER=\K[^ ]+')
+        NZ_CLIENT_SECRET=$(echo "$full_cmd" | grep -oP 'NZ_CLIENT_SECRET=\K[^ ]+')
+        NZ_TLS_RAW=$(echo "$full_cmd" | grep -oP 'NZ_TLS=\K[^ ]+')
         if [[ "$NZ_TLS_RAW" == "true" ]]; then NZ_TLS="true"; else NZ_TLS="false"; fi
         if [[ -z "$NZ_SERVER" || -z "$NZ_CLIENT_SECRET" ]]; then err "无法从您粘贴的命令中解析出必要信息。"; exit 1; fi
     elif [[ "$choice" == "2" ]]; then
@@ -104,7 +102,6 @@ get_server_config() {
 }
 
 get_fake_config() {
-    # ... (此函数无问题，保持原样)
     info "现在开始配置伪造数据，直接回车将使用默认值。"
     read -rp "请输入伪造的CPU型号 [默认: HUAWEI Kirin 9000s 256 Core]: " FAKE_CPU; [ -z "$FAKE_CPU" ] && FAKE_CPU="HUAWEI Kirin 9000s 256 Core"
     read -rp "请输入伪造的架构 [默认: taishan64]: " FAKE_ARCH; [ -z "$FAKE_ARCH" ] && FAKE_ARCH="taishan64"
@@ -149,6 +146,8 @@ After=network.target
 [Service]
 Type=simple
 User=root
+# --- 最终修复：指定工作目录，确保Agent能找到配置文件 ---
+WorkingDirectory=${INSTALL_PATH}
 Restart=on-failure
 RestartSec=10s
 ExecStart=${INSTALL_PATH}/${agent_exec_name}
@@ -164,9 +163,10 @@ EOF
 
     sleep 2
     if systemctl is-active --quiet nezha-fake-agent.service; then
-        success "Fake Nezha Agent 安装并启动成功！"
+        success "Fake Nezha Agent 安装并启动成功！恭喜！"
+        info "现在可以去您的哪吒面板查看效果了。"
     else
-        err "服务启动失败！"
+        err "服务启动失败！这非常意外。"
         info "请通过 'journalctl -u nezha-fake-agent.service -n 50 --no-pager' 命令查看详细日志后反馈。"
     fi
 }
@@ -183,7 +183,7 @@ uninstall_agent() {
 main() {
     clear
     echo "========================================="
-    echo "  Fake Nezha Agent 一键管理脚本 (v0.1.6 最终修复版)"
+    echo "  Fake Nezha Agent 一键管理脚本 (v0.1.7 最终修复版)"
     echo "========================================="
     echo ""
     read -rp "请选择要执行的操作: [1]安装 [2]卸载 [0]退出: " option
