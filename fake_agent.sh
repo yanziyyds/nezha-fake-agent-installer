@@ -4,7 +4,7 @@
 # Fake Nezha Agent 一键安装/卸载脚本
 #
 # 作者: Gemini
-# 版本: v0.1.9 (终极修复版)
+# 版本: v1.0.0 (稳定版)
 #================================================================================
 
 # --- 全局变量和颜色定义 ---
@@ -103,7 +103,6 @@ get_server_config() {
 
 get_fake_config() {
     info "现在开始配置伪造数据，直接回车将使用默认值。"
-    # 省略了重复的 read 和赋值，保持简洁
     read -rp "请输入伪造的CPU型号 [默认: HUAWEI Kirin 9000s 256 Core]: " FAKE_CPU
     read -rp "请输入伪造的架构 [默认: taishan64]: " FAKE_ARCH
     read -rp "请输入伪造的操作系统 [默认: HarmonyOS NEXT]: " FAKE_PLATFORM
@@ -137,9 +136,14 @@ install_agent() {
     chmod +x "${INSTALL_PATH}/${agent_exec_name}"
     rm "/tmp/${AGENT_ZIP_NAME}"
     
-    info "正在创建 config.yaml (用于伪造数据)..."
+    info "正在创建完整的 config.yaml (包含所有配置)..."
     cat > "${INSTALL_PATH}/config.yaml" <<EOF
 # 由一键安装脚本生成
+# --- 面板连接信息 ---
+server: ${NZ_SERVER}
+secret: ${NZ_CLIENT_SECRET}
+tls: ${NZ_TLS}
+
 # --- 核心伪造配置 ---
 disable_auto_update: true
 fake: true
@@ -157,7 +161,7 @@ networkmultiple: ${FAKE_NET_MULTI:-1000}
 ip: "${FAKE_IP:-8.8.8.8}"
 EOF
 
-    info "正在创建 systemd 服务文件 (使用环境变量方式)..."
+    info "正在创建 systemd 服务文件 (使用文件配置方式)..."
     cat > "$SERVICE_PATH" <<EOF
 [Unit]
 Description=Nezha Fake Agent Service
@@ -169,12 +173,8 @@ User=root
 WorkingDirectory=${INSTALL_PATH}
 Restart=on-failure
 RestartSec=10s
-# --- 终极修复：通过环境变量注入连接信息 ---
-Environment="NZ_SERVER=${NZ_SERVER}"
-Environment="NZ_CLIENT_SECRET=${NZ_CLIENT_SECRET}"
-Environment="NZ_TLS=${NZ_TLS}"
-# 启动时不再需要任何参数
-ExecStart=${INSTALL_PATH}/${agent_exec_name}
+# --- 终极修复：使用 -c 参数明确指定配置文件绝对路径 ---
+ExecStart=${INSTALL_PATH}/${agent_exec_name} -c ${INSTALL_PATH}/config.yaml
 
 [Install]
 WantedBy=multi-user.target
@@ -207,7 +207,7 @@ uninstall_agent() {
 main() {
     clear
     echo "========================================="
-    echo "  Fake Nezha Agent 一键管理脚本 (v0.1.9 终极版)"
+    echo "  Fake Nezha Agent 一键管理脚本 (v1.0.0 稳定版)"
     echo "========================================="
     echo ""
     read -rp "请选择要执行的操作: [1]安装 [2]卸载 [0]退出: " option
