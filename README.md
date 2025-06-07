@@ -6,71 +6,40 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Language](https://img.shields.io/badge/language-Shell-blue.svg)](./fake_agent.sh)
 
-一个功能强大的 Shell 脚本，用于一键安装、卸载和管理 [dysf888/fake-nezha-agent-v1](https://github.com/dysf888/fake-nezha-agent-v1)，帮助您轻松地在[哪吒面板](https://github.com/nezhahq/dashboard)中“装逼”。
+一个用于稳定运行 `dysf888/fake-nezha-agent-v1` 的终极解决方案，通过 `screen` 和 `cron` 解决了原程序存在的后台运行及开机自启缺陷。
 
-## 功能特点
+### 一键安装
 
--   **全自动安装**：自动检测系统架构 (x86_64, arm64等)，下载并配置最合适的 Agent 程序。
--   **智能配置**：支持直接粘贴哪吒面板官方的一键安装命令，脚本会自动提取服务器地址和密钥，免去手动输入的烦恼。
--   **交互式自定义**：在安装过程中，脚本会引导您输入想伪造的各项信息（CPU型号、核心数、内存大小、流量倍率等），并提供合理的默认值。
--   **稳定可靠**：使用 `systemd` 将 Agent 创建为系统服务，确保开机自启和进程守护，远比 `nohup` 可靠。
--   **轻松管理**：提供完整的安装与卸载功能，一键部署，一键清除，无任何残留。
--   **用户友好**：全程中文提示，关键信息彩色高亮，清晰易懂。
-
-## 使用方法
-
-### 一键安装命令
-
-在您的 Linux 服务器上，使用 `root` 权限执行以下命令即可：
+请以 `root` 权限，在您的 Linux 服务器上执行以下命令：
 
 ```bash
 bash -c "$(curl -LfsS "https://raw.githubusercontent.com/k08255-lxm/nezha-fake-agent-installer/main/fake_agent.sh?$(date +%s)")"
 ```
 
-### 手动安装
+脚本将自动处理所有依赖安装、下载配置及设置开机自启。
 
-1.  克隆本仓库到您的服务器：
+### 日常管理
+
+  * **查看实时日志**:
+
     ```bash
-    git clone https://github.com/k08255-lxm/nezha-fake-agent-installer.git
-    ```
-2.  进入项目目录：
-    ```bash
-    cd nezha-fake-agent-installer
-    ```
-3.  为脚本赋予执行权限：
-    ```bash
-    chmod +x fake_agent.sh
-    ```
-4.  以 `root` 权限运行脚本：
-    ```bash
-    sudo ./fake_agent.sh
+    screen -r nezha-fake
     ```
 
-### 脚本界面预览
+    *(进入日志界面后，按组合键 `Ctrl+A`，再按 `D` 键即可返回主终端，程序将继续在后台运行)*
 
-运行后，您会看到一个清晰的管理菜单：
+  * **停止 Agent 服务**:
 
-```text
-=========================================
-  Fake Nezha Agent 一键管理脚本
-=========================================
+    ```bash
+    screen -S nezha-fake -X quit
+    ```
 
-请选择要执行的操作:
-1) 安装 Fake Nezha Agent
-2) 卸载 Fake Nezha Agent
-0) 退出脚本
+  * **卸载 Agent**:
+    重新运行上方的一键安装脚本，并在菜单中选择“卸载”选项即可。
 
-请输入选项 [0-2]:
-```
+### 许可证
 
-## 兼容性
-
-本脚本为 Linux 设计，依赖 `systemd` 进行服务管理。理论上支持所有主流发行版，如:
-- Ubuntu 16+
-- Debian 8+
-- CentOS 7+
-- AlmaLinux / Rocky Linux
-- ...以及其他使用 systemd 的系统
+本项目基于 [MIT] 许可证发行。
 
 ## 致谢
 
