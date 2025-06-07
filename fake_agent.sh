@@ -4,7 +4,7 @@
 # Fake Nezha Agent 一键安装/卸载脚本 (基于 screen)
 #
 # 作者: Gemini
-# 版本: v2.1.0 (最终稳定版)
+# 版本: v3.0.0 (终极稳定版)
 #================================================================================
 
 # --- 全局变量和颜色定义 ---
@@ -104,7 +104,7 @@ get_server_config() {
 
 get_fake_config() {
     info "现在开始配置伪造数据，直接回车将使用默认值。"
-    read -rp "请输入伪造的CPU型号 [默认: HUAWEI Kirin 9000s 256 Core]: " FAKE_CPU
+    read -rp "请输入伪造的CPU型号 [默认: HUAWEI Kirin 9000sm 256 Physical Core]: " FAKE_CPU
     read -rp "请输入伪造的架构 [默认: taishan64]: " FAKE_ARCH
     read -rp "请输入伪造的操作系统 [默认: HarmonyOS NEXT]: " FAKE_PLATFORM
     read -rp "请输入伪造的磁盘总大小(Byte) [默认: 219902325555200]: " FAKE_DISK_TOTAL
@@ -112,7 +112,7 @@ get_fake_config() {
     read -rp "请输入真实磁盘使用量的倍数 [默认: 10]: " FAKE_DISK_MULTI
     read -rp "请输入真实内存使用量的倍数 [默认: 20]: " FAKE_MEM_MULTI
     read -rp "请输入真实网络流量的倍数 [默认: 1000]: " FAKE_NET_MULTI
-    read -rp "请输入伪造的IP地址 [默认: 8.8.8.8]: " FAKE_IP
+    read -rp "请输入伪造的IP地址 [默认: 1.1.1.1]: " FAKE_IP
 }
 
 # 彻底清理旧环境
@@ -160,33 +160,31 @@ install_agent() {
     chmod +x "${INSTALL_PATH}/${agent_exec_name}"
     rm "/tmp/${AGENT_ZIP_NAME}"
     
-    info "正在创建 config.yaml (仅用于伪造数据)..."
+    info "正在根据官方示例创建 config.yaml..."
     cat > "${INSTALL_PATH}/config.yaml" <<EOF
 # 由一键安装脚本生成
-# --- 核心伪造配置 ---
+# --- 核心伪造配置 (严格遵循官方格式) ---
 disable_auto_update: true
 fake: true
-
-# --- 自定义伪造信息 ---
 version: 6.6.6
 arch: "${FAKE_ARCH:-taishan64}"
-cpu: "${FAKE_CPU:-HUAWEI Kirin 9000s 256 Core}"
+cpu: "${FAKE_CPU:-HUAWEI Kirin 9000sm 256 Physical Core}"
 platform: "${FAKE_PLATFORM:-HarmonyOS NEXT}"
 disktotal: ${FAKE_DISK_TOTAL:-219902325555200}
 memtotal: ${FAKE_MEM_TOTAL:-549755813888}
 diskmultiple: ${FAKE_DISK_MULTI:-10}
 memmultiple: ${FAKE_MEM_MULTI:-20}
 networkmultiple: ${FAKE_NET_MULTI:-1000}
-ip: "${FAKE_IP:-8.8.8.8}"
+ip: "${FAKE_IP:-1.1.1.1}"
 EOF
 
-    info "正在通过命令行参数启动 screen 会话..."
-    # 终极修复：通过命令行参数直接注入核心配置，彻底绕开所有配置文件和环境变量的 Bug
-    screen -dmS "$SESSION_NAME" "${INSTALL_PATH}/${agent_exec_name}" \
-        --server "${NZ_SERVER}" \
-        --secret "${NZ_CLIENT_SECRET}" \
-        --tls="${NZ_TLS}" \
-        -c "${INSTALL_PATH}/config.yaml"
+    info "正在通过环境变量 + 配置文件启动 screen 会话..."
+    # 终极修复：使用 env 将连接信息作为环境变量注入，同时用 -c 加载伪造信息配置文件
+    screen -dmS "$SESSION_NAME" env \
+        NZ_SERVER="${NZ_SERVER}" \
+        NZ_CLIENT_SECRET="${NZ_CLIENT_SECRET}" \
+        NZ_TLS="${NZ_TLS}" \
+        "${INSTALL_PATH}/${agent_exec_name}" -c "${INSTALL_PATH}/config.yaml"
 
     sleep 2
     if screen -ls | grep -q "$SESSION_NAME"; then
@@ -201,7 +199,7 @@ EOF
     else
         err "服务启动失败！这非常意外。"
         err "请尝试手动运行启动命令查看报错: "
-        err "${INSTALL_PATH}/${agent_exec_name} --server \"${NZ_SERVER}\" --secret \"${NZ_CLIENT_SECRET}\" --tls=\"${NZ_TLS}\" -c \"${INSTALL_PATH}/config.yaml\""
+        err "env NZ_SERVER=\"${NZ_SERVER}\" NZ_CLIENT_SECRET=\"${NZ_CLIENT_SECRET}\" NZ_TLS=\"${NZ_TLS}\" ${INSTALL_PATH}/${agent_exec_name} -c ${INSTALL_PATH}/config.yaml"
     fi
 }
 
@@ -214,7 +212,7 @@ uninstall_agent() {
 main() {
     clear
     echo "========================================="
-    echo "  Fake Nezha Agent 一键管理脚本 (v2.1.0 稳定版)"
+    echo "  Fake Nezha Agent 一键管理脚本 (v3.0.0 终极稳定版)"
     echo "         (基于 screen 运行)"
     echo "========================================="
     echo ""
