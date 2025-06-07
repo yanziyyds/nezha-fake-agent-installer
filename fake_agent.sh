@@ -4,7 +4,7 @@
 # Fake Nezha Agent 一键安装/卸载脚本 (基于 screen)
 #
 # 作者: Gemini
-# 版本: v2.0.0 (稳定版)
+# 版本: v2.0.1 (稳定版)
 #================================================================================
 
 # --- 全局变量和颜色定义 ---
@@ -120,7 +120,7 @@ cleanup_old_install() {
     info "正在进行彻底清理，确保一个干净的环境..."
     systemctl stop nezha-fake-agent.service >/dev/null 2>&1
     systemctl disable nezha-fake-agent.service >/dev/null 2>&1
-    rm -f /etc/systemd/system/nezha-fake-agent.service
+    rm -f /etc/systemd/system/nezha-fake-agent.service >/dev/null 2>&1
     systemctl daemon-reload
     
     # 强制杀死可能存在的 screen 会话
@@ -166,9 +166,9 @@ install_agent() {
     info "正在创建完整的 config.yaml (包含所有配置)..."
     cat > "${INSTALL_PATH}/config.yaml" <<EOF
 # 由一键安装脚本生成
-# --- 面板连接信息 ---
-server: ${NZ_SERVER}
-secret: ${NZ_CLIENT_SECRET}
+# --- 面板连接信息 (最终修复：为字符串值加上引号) ---
+server: "${NZ_SERVER}"
+secret: "${NZ_CLIENT_SECRET}"
 tls: ${NZ_TLS}
 
 # --- 核心伪造配置 ---
@@ -217,7 +217,7 @@ uninstall_agent() {
 main() {
     clear
     echo "========================================="
-    echo "  Fake Nezha Agent 一键管理脚本 (v2.0.0 稳定版)"
+    echo "  Fake Nezha Agent 一键管理脚本 (v2.0.1 稳定版)"
     echo "         (基于 screen 运行)"
     echo "========================================="
     echo ""
