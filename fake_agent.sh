@@ -4,7 +4,7 @@
 # Fake Nezha Agent 一键安装/卸载脚本
 #
 # 作者: Gemini
-# 版本: v0.1.8 (终极修复版)
+# 版本: v0.1.9 (终极修复版)
 #================================================================================
 
 # --- 全局变量和颜色定义 ---
@@ -103,15 +103,16 @@ get_server_config() {
 
 get_fake_config() {
     info "现在开始配置伪造数据，直接回车将使用默认值。"
-    read -rp "请输入伪造的CPU型号 [默认: HUAWEI Kirin 9000s 256 Core]: " FAKE_CPU; [ -z "$FAKE_CPU" ] && FAKE_CPU="HUAWEI Kirin 9000s 256 Core"
-    read -rp "请输入伪造的架构 [默认: taishan64]: " FAKE_ARCH; [ -z "$FAKE_ARCH" ] && FAKE_ARCH="taishan64"
-    read -rp "请输入伪造的操作系统 [默认: HarmonyOS NEXT]: " FAKE_PLATFORM; [ -z "$FAKE_PLATFORM" ] && FAKE_PLATFORM="HarmonyOS NEXT"
-    read -rp "请输入伪造的磁盘总大小(Byte) [默认: 219902325555200]: " FAKE_DISK_TOTAL; [ -z "$FAKE_DISK_TOTAL" ] && FAKE_DISK_TOTAL="219902325555200"
-    read -rp "请输入伪造的内存总大小(Byte) [默认: 549755813888]: " FAKE_MEM_TOTAL; [ -z "$FAKE_MEM_TOTAL" ] && FAKE_MEM_TOTAL="549755813888"
-    read -rp "请输入真实磁盘使用量的倍数 [默认: 10]: " FAKE_DISK_MULTI; [ -z "$FAKE_DISK_MULTI" ] && FAKE_DISK_MULTI="10"
-    read -rp "请输入真实内存使用量的倍数 [默认: 20]: " FAKE_MEM_MULTI; [ -z "$FAKE_MEM_MULTI" ] && FAKE_MEM_MULTI="20"
-    read -rp "请输入真实网络流量的倍数 [默认: 1000]: " FAKE_NET_MULTI; [ -z "$FAKE_NET_MULTI" ] && FAKE_NET_MULTI="1000"
-    read -rp "请输入伪造的IP地址 [默认: 8.8.8.8]: " FAKE_IP; [ -z "$FAKE_IP" ] && FAKE_IP="8.8.8.8"
+    # 省略了重复的 read 和赋值，保持简洁
+    read -rp "请输入伪造的CPU型号 [默认: HUAWEI Kirin 9000s 256 Core]: " FAKE_CPU
+    read -rp "请输入伪造的架构 [默认: taishan64]: " FAKE_ARCH
+    read -rp "请输入伪造的操作系统 [默认: HarmonyOS NEXT]: " FAKE_PLATFORM
+    read -rp "请输入伪造的磁盘总大小(Byte) [默认: 219902325555200]: " FAKE_DISK_TOTAL
+    read -rp "请输入伪造的内存总大小(Byte) [默认: 549755813888]: " FAKE_MEM_TOTAL
+    read -rp "请输入真实磁盘使用量的倍数 [默认: 10]: " FAKE_DISK_MULTI
+    read -rp "请输入真实内存使用量的倍数 [默认: 20]: " FAKE_MEM_MULTI
+    read -rp "请输入真实网络流量的倍数 [默认: 1000]: " FAKE_NET_MULTI
+    read -rp "请输入伪造的IP地址 [默认: 8.8.8.8]: " FAKE_IP
 }
 
 install_agent() {
@@ -129,15 +130,34 @@ install_agent() {
     
     agent_exec_name=$(unzip -Z1 "/tmp/${AGENT_ZIP_NAME}" | head -n 1 | tr -d '\r')
     if [ -z "$agent_exec_name" ] || [ ! -f "${INSTALL_PATH}/${agent_exec_name}" ]; then
-        err "严重错误：无法在压缩包中找到或验证可执行文件！"
-        rm -rf "$INSTALL_PATH"; rm "/tmp/${AGENT_ZIP_NAME}"; exit 1
+        err "严重错误：无法在压缩包中找到或验证可执行文件！"; rm -rf "$INSTALL_PATH"; rm "/tmp/${AGENT_ZIP_NAME}"; exit 1
     fi
     info "检测到可执行文件: '${agent_exec_name}'"
     
     chmod +x "${INSTALL_PATH}/${agent_exec_name}"
     rm "/tmp/${AGENT_ZIP_NAME}"
     
-    info "正在创建 systemd 服务文件..."
+    info "正在创建 config.yaml (用于伪造数据)..."
+    cat > "${INSTALL_PATH}/config.yaml" <<EOF
+# 由一键安装脚本生成
+# --- 核心伪造配置 ---
+disable_auto_update: true
+fake: true
+
+# --- 自定义伪造信息 ---
+version: 6.6.6
+arch: "${FAKE_ARCH:-taishan64}"
+cpu: "${FAKE_CPU:-HUAWEI Kirin 9000s 256 Core}"
+platform: "${FAKE_PLATFORM:-HarmonyOS NEXT}"
+disktotal: ${FAKE_DISK_TOTAL:-219902325555200}
+memtotal: ${FAKE_MEM_TOTAL:-549755813888}
+diskmultiple: ${FAKE_DISK_MULTI:-10}
+memmultiple: ${FAKE_MEM_MULTI:-20}
+networkmultiple: ${FAKE_NET_MULTI:-1000}
+ip: "${FAKE_IP:-8.8.8.8}"
+EOF
+
+    info "正在创建 systemd 服务文件 (使用环境变量方式)..."
     cat > "$SERVICE_PATH" <<EOF
 [Unit]
 Description=Nezha Fake Agent Service
@@ -149,8 +169,12 @@ User=root
 WorkingDirectory=${INSTALL_PATH}
 Restart=on-failure
 RestartSec=10s
-# --- 终极修复：使用 -c 参数明确指定配置文件路径 ---
-ExecStart=${INSTALL_PATH}/${agent_exec_name} -c ${INSTALL_PATH}/config.yaml
+# --- 终极修复：通过环境变量注入连接信息 ---
+Environment="NZ_SERVER=${NZ_SERVER}"
+Environment="NZ_CLIENT_SECRET=${NZ_CLIENT_SECRET}"
+Environment="NZ_TLS=${NZ_TLS}"
+# 启动时不再需要任何参数
+ExecStart=${INSTALL_PATH}/${agent_exec_name}
 
 [Install]
 WantedBy=multi-user.target
@@ -183,7 +207,7 @@ uninstall_agent() {
 main() {
     clear
     echo "========================================="
-    echo "  Fake Nezha Agent 一键管理脚本 (v0.1.8 终极版)"
+    echo "  Fake Nezha Agent 一键管理脚本 (v0.1.9 终极版)"
     echo "========================================="
     echo ""
     read -rp "请选择要执行的操作: [1]安装 [2]卸载 [0]退出: " option
