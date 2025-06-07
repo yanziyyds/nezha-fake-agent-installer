@@ -4,7 +4,7 @@
 # Fake Nezha Agent 一键安装/卸载脚本
 #
 # 作者: Gemini
-# 版本: v0.1.5 (终极诊断版)
+# 版本: v0.1.6 (最终修复版)
 #================================================================================
 
 # --- 全局变量和颜色定义 ---
@@ -62,7 +62,7 @@ check_and_install_deps() {
         if ! yum install -y "${deps_to_install[@]}"; then
              err "依赖安装失败！"; exit 1
         fi
-    elif command -v dnf >/dev/null 2>&1;
+    elif command -v dnf >/dev/null 2>&1; then # <--- FIX: Added 'then' keyword
         info "正在使用 dnf 安装..."
         if ! dnf install -y "${deps_to_install[@]}"; then
              err "依赖安装失败！"; exit 1
@@ -130,21 +130,19 @@ install_agent() {
     mkdir -p "$INSTALL_PATH"
     unzip -o "/tmp/${AGENT_ZIP_NAME}" -d "$INSTALL_PATH" || { err "解压失败！"; rm -rf "$INSTALL_PATH"; exit 1; }
     
-    debug "列出安装目录中的所有文件:"
-    ls -l "$INSTALL_PATH"
-    
     agent_exec_name=$(unzip -Z1 "/tmp/${AGENT_ZIP_NAME}" | head -n 1 | tr -d '\r')
     if [ -z "$agent_exec_name" ] || [ ! -f "${INSTALL_PATH}/${agent_exec_name}" ]; then
         err "严重错误：无法在压缩包中找到或验证可执行文件！"
         rm -rf "$INSTALL_PATH"; rm "/tmp/${AGENT_ZIP_NAME}"; exit 1
     fi
-    debug "脚本检测到的可执行文件名为: '${agent_exec_name}'"
+    info "检测到可执行文件: '${agent_exec_name}'"
     
     chmod +x "${INSTALL_PATH}/${agent_exec_name}"
     rm "/tmp/${AGENT_ZIP_NAME}"
     
-    info "正在准备 systemd 服务文件内容..."
-    service_content="[Unit]
+    info "正在创建 systemd 服务文件..."
+    cat > "$SERVICE_PATH" <<EOF
+[Unit]
 Description=Nezha Fake Agent Service
 After=network.target
 
@@ -156,19 +154,8 @@ RestartSec=10s
 ExecStart=${INSTALL_PATH}/${agent_exec_name}
 
 [Install]
-WantedBy=multi-user.target"
-
-    debug "将要写入 ${SERVICE_PATH} 的内容如下:"
-    echo -e "${cyan}--- 文件内容预览 ---${plain}"
-    echo "${service_content}"
-    echo -e "${cyan}--- 预览结束 ---${plain}"
-
-    echo "${service_content}" > "$SERVICE_PATH"
-    
-    debug "写入完成。正在从磁盘读回文件内容进行校验:"
-    echo -e "${cyan}--- 文件内容校验 ---${plain}"
-    cat "$SERVICE_PATH"
-    echo -e "${cyan}--- 校验结束 ---${plain}"
+WantedBy=multi-user.target
+EOF
 
     info "重载 systemd 并启动服务..."
     systemctl daemon-reload
@@ -179,8 +166,8 @@ WantedBy=multi-user.target"
     if systemctl is-active --quiet nezha-fake-agent.service; then
         success "Fake Nezha Agent 安装并启动成功！"
     else
-        err "服务启动失败！请将以上所有日志完整复制后反馈！"
-        info "您也可以通过 'journalctl -u nezha-fake-agent.service -n 50 --no-pager' 查看详细日志。"
+        err "服务启动失败！"
+        info "请通过 'journalctl -u nezha-fake-agent.service -n 50 --no-pager' 命令查看详细日志后反馈。"
     fi
 }
 
@@ -196,7 +183,7 @@ uninstall_agent() {
 main() {
     clear
     echo "========================================="
-    echo "  Fake Nezha Agent 一键管理脚本 (v0.1.5 终极诊断版)"
+    echo "  Fake Nezha Agent 一键管理脚本 (v0.1.6 最终修复版)"
     echo "========================================="
     echo ""
     read -rp "请选择要执行的操作: [1]安装 [2]卸载 [0]退出: " option
