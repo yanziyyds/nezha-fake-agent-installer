@@ -4,6 +4,7 @@
 # Fake Nezha Agent 一键安装/卸载脚本
 #
 # 功能:
+#   - 自动安装依赖 (curl, unzip)
 #   - 自动检测系统架构并从 GitHub 下载最新版 Fake Agent
 #   - 支持通过粘贴官方命令自动解析或手动输入面板信息
 #   - 交互式配置伪造的服务器参数
@@ -11,7 +12,7 @@
 #   - 提供完整的卸载功能，一键清除所有相关文件和服务
 #
 # 作者: Gemini
-# 版本: 1.2 (动态识别可执行文件，增加版本显示)
+# 版本: 1.4 (增加自动依赖安装功能)
 #================================================================================
 
 # --- 全局变量和颜色定义 ---
@@ -52,15 +53,60 @@ check_root() {
     fi
 }
 
-# 检查系统依赖
-check_deps() {
+# 检查并安装依赖 (新功能)
+check_and_install_deps() {
+    info "正在检查并安装所需依赖 (curl, unzip)..."
+    local deps_to_install=()
     for dep in curl unzip; do
         if ! command -v "$dep" >/dev/null 2>&1; then
-            err "依赖 '$dep' 未安装，请先安装后再运行脚本。"
+            deps_to_install+=("$dep")
+        fi
+    done
+
+    if [ ${#deps_to_install[@]} -eq 0 ]; then
+        success "所有依赖均已安装。"
+        return
+    fi
+
+    info "检测到未安装的依赖: ${deps_to_install[*]}"
+    
+    # 自动安装
+    if command -v apt-get >/dev/null 2>&1; then
+        info "正在使用 apt-get 安装..."
+        apt-get update
+        if ! apt-get install -y "${deps_to_install[@]}"; then
+             err "依赖安装失败，请检查您的软件源设置！"
+             exit 1
+        fi
+    elif command -v yum >/dev/null 2>&1; then
+        info "正在使用 yum 安装..."
+        if ! yum install -y "${deps_to_install[@]}"; then
+             err "依赖安装失败！"
+             exit 1
+        fi
+    elif command -v dnf >/dev/null 2>&1; then
+        info "正在使用 dnf 安装..."
+        if ! dnf install -y "${deps_to_install[@]}"; then
+             err "依赖安装失败！"
+             exit 1
+        fi
+    else
+        err "未找到可用的包管理器 (apt/yum/dnf)。"
+        err "请手动安装以下依赖: ${deps_to_install[*]}"
+        exit 1
+    fi
+
+    # 再次检查
+    for dep in "${deps_to_install[@]}"; do
+        if ! command -v "$dep" >/dev/null 2>&1; then
+            err "依赖 '$dep' 安装失败！请手动安装后重试。"
             exit 1
         fi
     done
+
+    success "依赖安装成功！"
 }
+
 
 # 检测系统架构
 detect_arch() {
@@ -172,7 +218,7 @@ install_agent() {
     
     # 1. 检查环境
     check_root
-    check_deps
+    check_and_install_deps # <--- 调用新的依赖检查函数
     detect_arch
     
     # 2. 如果已安装，先提示卸载
@@ -196,15 +242,16 @@ install_agent() {
     mkdir -p "$INSTALL_PATH"
     
     info "解压 Agent..."
+    # 动态识别解压出的可执行文件名
+    local agent_exec_name
+    agent_exec_name=$(unzip -Z1 "/tmp/${AGENT_ZIP_NAME}" | grep -v -E 'LICENSE|README' | head -n 1 | tr -d '\r')
+
     if ! unzip -o "/tmp/${AGENT_ZIP_NAME}" -d "$INSTALL_PATH"; then
         err "解压失败！"
         rm -rf "$INSTALL_PATH"
         exit 1
     fi
-    
-    # 动态识别解压出的可执行文件名
-    local agent_exec_name
-    agent_exec_name=$(unzip -Z1 "/tmp/${AGENT_ZIP_NAME}" | grep -v -E 'LICENSE|README' | head -n 1 | tr -d '\r')
+
     if [ -z "$agent_exec_name" ]; then
         err "无法在压缩包中找到可执行文件！"
         rm -rf "$INSTALL_PATH"
@@ -310,7 +357,7 @@ uninstall_agent() {
 main() {
     clear
     echo "========================================="
-    echo "  Fake Nezha Agent 一键管理脚本 (v1.2)"
+    echo "  Fake Nezha Agent 一键管理脚本 (v1.4)"
     echo "========================================="
     echo ""
     echo "请选择要执行的操作:"
