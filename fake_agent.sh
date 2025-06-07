@@ -1,10 +1,10 @@
 #!/bin/bash
 
 #================================================================================
-# Fake Nezha Agent 一键安装/卸载脚本
+# Fake Nezha Agent 一键安装/卸载脚本 (基于 screen)
 #
 # 作者: Gemini
-# 版本: v1.0.0 (稳定版)
+# 版本: v2.0.0 (稳定版)
 #================================================================================
 
 # --- 全局变量和颜色定义 ---
@@ -13,10 +13,10 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
+# 会话名称
+SESSION_NAME="nezha-fake"
 # 安装路径
 INSTALL_PATH="/opt/nezha-fake"
-# systemd 服务文件路径
-SERVICE_PATH="/etc/systemd/system/nezha-fake-agent.service"
 # Agent 程序下载URL模板
 AGENT_URL_TEMPLATE="https://github.com/dysf888/fake-nezha-agent-v1/releases/latest/download/nezha-agent-fake_{os}_{arch}.zip"
 
@@ -33,10 +33,11 @@ check_root() {
     fi
 }
 
+# 检查并安装依赖 (包含 screen)
 check_and_install_deps() {
-    info "正在检查并安装所需依赖 (curl, unzip)..."
+    info "正在检查并安装所需依赖 (curl, unzip, screen)..."
     local deps_to_install=()
-    for dep in curl unzip; do
+    for dep in curl unzip screen; do
         if ! command -v "$dep" >/dev/null 2>&1; then
             deps_to_install+=("$dep")
         fi
@@ -114,11 +115,37 @@ get_fake_config() {
     read -rp "请输入伪造的IP地址 [默认: 8.8.8.8]: " FAKE_IP
 }
 
+# 彻底清理旧环境
+cleanup_old_install() {
+    info "正在进行彻底清理，确保一个干净的环境..."
+    systemctl stop nezha-fake-agent.service >/dev/null 2>&1
+    systemctl disable nezha-fake-agent.service >/dev/null 2>&1
+    rm -f /etc/systemd/system/nezha-fake-agent.service
+    systemctl daemon-reload
+    
+    # 强制杀死可能存在的 screen 会话
+    if screen -ls | grep -q "$SESSION_NAME"; then
+        info "发现旧的 screen 会话，正在终止..."
+        screen -S "$SESSION_NAME" -X quit
+    fi
+
+    # 删除旧的安装目录
+    rm -rf "$INSTALL_PATH"
+    success "清理完成！"
+}
+
+# 安装 Agent
 install_agent() {
-    info "开始安装 Fake Nezha Agent..."
-    check_root; check_and_install_deps; detect_arch
-    if [ -f "$SERVICE_PATH" ]; then err "检测到已安装的 Fake Agent。请先运行卸载选项。"; exit 1; fi
-    get_server_config; get_fake_config
+    info "开始安装 Fake Nezha Agent (screen 模式)..."
+    check_root
+    check_and_install_deps
+    
+    # 先执行彻底清理
+    cleanup_old_install
+
+    detect_arch
+    get_server_config
+    get_fake_config
     
     info "正在从 GitHub 下载 Agent: ${AGENT_URL}"
     curl -L -o "/tmp/${AGENT_ZIP_NAME}" "${AGENT_URL}" || { err "下载失败！"; exit 1; }
@@ -161,53 +188,37 @@ networkmultiple: ${FAKE_NET_MULTI:-1000}
 ip: "${FAKE_IP:-8.8.8.8}"
 EOF
 
-    info "正在创建 systemd 服务文件 (使用文件配置方式)..."
-    cat > "$SERVICE_PATH" <<EOF
-[Unit]
-Description=Nezha Fake Agent Service
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=${INSTALL_PATH}
-Restart=on-failure
-RestartSec=10s
-# --- 终极修复：使用 -c 参数明确指定配置文件绝对路径 ---
-ExecStart=${INSTALL_PATH}/${agent_exec_name} -c ${INSTALL_PATH}/config.yaml
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    info "重载 systemd 并启动服务..."
-    systemctl daemon-reload
-    systemctl enable nezha-fake-agent.service
-    systemctl start nezha-fake-agent.service
+    info "正在启动 screen 会话以在后台运行 Agent..."
+    screen -dmS "$SESSION_NAME" "${INSTALL_PATH}/${agent_exec_name}" -c "${INSTALL_PATH}/config.yaml"
 
     sleep 2
-    if systemctl is-active --quiet nezha-fake-agent.service; then
+    if screen -ls | grep -q "$SESSION_NAME"; then
         success "Fake Nezha Agent 安装并启动成功！恭喜！"
         info "现在可以去您的哪吒面板查看效果了。"
+        info ""
+        info "--- Agent 管理命令 ---"
+        info "查看运行日志: screen -r ${SESSION_NAME}"
+        info "(查看后按 Ctrl+A, 再按 D 即可退出日志界面，程序会继续在后台运行)"
+        info "停止 Agent:  screen -S ${SESSION_NAME} -X quit"
+        info "--------------------"
     else
         err "服务启动失败！这非常意外。"
-        info "请通过 'journalctl -u nezha-fake-agent.service -n 50 --no-pager' 命令查看详细日志后反馈。"
+        err "请尝试手动运行启动命令查看报错: "
+        err "${INSTALL_PATH}/${agent_exec_name} -c ${INSTALL_PATH}/config.yaml"
     fi
 }
 
 uninstall_agent() {
     info "开始卸载 Fake Nezha Agent..."
     check_root
-    if [ ! -f "$SERVICE_PATH" ]; then err "未找到 Fake Agent 服务，无需卸载。"; exit 1; fi
-    systemctl stop nezha-fake-agent.service; systemctl disable nezha-fake-agent.service
-    rm -f "$SERVICE_PATH"; systemctl daemon-reload; rm -rf "$INSTALL_PATH"
-    success "Fake Nezha Agent 已被彻底卸载！"
+    cleanup_old_install
 }
 
 main() {
     clear
     echo "========================================="
-    echo "  Fake Nezha Agent 一键管理脚本 (v1.0.0 稳定版)"
+    echo "  Fake Nezha Agent 一键管理脚本 (v2.0.0 稳定版)"
+    echo "         (基于 screen 运行)"
     echo "========================================="
     echo ""
     read -rp "请选择要执行的操作: [1]安装 [2]卸载 [0]退出: " option
