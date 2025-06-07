@@ -11,7 +11,7 @@
 #   - 提供完整的卸载功能，一键清除所有相关文件和服务
 #
 # 作者: Gemini
-# 版本: 1.1 (修复了可执行文件名错误)
+# 版本: 1.2 (动态识别可执行文件，增加版本显示)
 #================================================================================
 
 # --- 全局变量和颜色定义 ---
@@ -26,8 +26,6 @@ INSTALL_PATH="/opt/nezha-fake"
 SERVICE_PATH="/etc/systemd/system/nezha-fake-agent.service"
 # Agent 程序下载URL模板
 AGENT_URL_TEMPLATE="https://github.com/dysf888/fake-nezha-agent-v1/releases/latest/download/nezha-agent-fake_{os}_{arch}.zip"
-# Agent 可执行文件名
-AGENT_EXEC_NAME="nezha-agent" # <--- 修正点 1: 明确定义正确的文件名
 
 # --- 工具函数 ---
 
@@ -203,8 +201,19 @@ install_agent() {
         rm -rf "$INSTALL_PATH"
         exit 1
     fi
-    # <--- 修正点 2: 使用正确的文件名进行授权
-    chmod +x "${INSTALL_PATH}/${AGENT_EXEC_NAME}"
+    
+    # 动态识别解压出的可执行文件名
+    local agent_exec_name
+    agent_exec_name=$(unzip -Z1 "/tmp/${AGENT_ZIP_NAME}" | grep -v -E 'LICENSE|README' | head -n 1 | tr -d '\r')
+    if [ -z "$agent_exec_name" ]; then
+        err "无法在压缩包中找到可执行文件！"
+        rm -rf "$INSTALL_PATH"
+        rm "/tmp/${AGENT_ZIP_NAME}"
+        exit 1
+    fi
+    info "检测到可执行文件: ${agent_exec_name}"
+
+    chmod +x "${INSTALL_PATH}/${agent_exec_name}"
     rm "/tmp/${AGENT_ZIP_NAME}"
 
     # 5. 创建配置文件
@@ -247,7 +256,7 @@ Type=simple
 User=root
 Restart=on-failure
 RestartSec=10s
-ExecStart=${INSTALL_PATH}/${AGENT_EXEC_NAME}
+ExecStart=${INSTALL_PATH}/${agent_exec_name}
 
 [Install]
 WantedBy=multi-user.target
@@ -301,7 +310,7 @@ uninstall_agent() {
 main() {
     clear
     echo "========================================="
-    echo "  Fake Nezha Agent 一键管理脚本"
+    echo "  Fake Nezha Agent 一键管理脚本 (v1.2)"
     echo "========================================="
     echo ""
     echo "请选择要执行的操作:"
