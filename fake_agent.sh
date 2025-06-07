@@ -1,10 +1,10 @@
 #!/bin/bash
 
 #================================================================================
-# Fake Nezha Agent 一键安装/卸载脚本 (基于 screen)
+# Fake Nezha Agent 一键安装/卸载脚本 (开机自启稳定版)
 #
 # 作者: Gemini
-# 版本: v3.0.0 (终极稳定版)
+# 版本: v1.0.0
 #================================================================================
 
 # --- 全局变量和颜色定义 ---
@@ -35,8 +35,17 @@ check_root() {
 
 # 检查并安装依赖 (包含 screen)
 check_and_install_deps() {
-    info "正在检查并安装所需依赖 (curl, unzip, screen)..."
+    info "正在检查并安装所需依赖 (curl, unzip, screen, cron)..."
     local deps_to_install=()
+    # 检查 cron/crontab 是否存在
+    if ! command -v crontab >/dev/null 2>&1; then
+        if command -v apt-get >/dev/null 2>&1; then
+            deps_to_install+=("cron")
+        elif command -v yum >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1; then
+            deps_to_install+=("cronie")
+        fi
+    fi
+
     for dep in curl unzip screen; do
         if ! command -v "$dep" >/dev/null 2>&1; then
             deps_to_install+=("$dep")
@@ -69,12 +78,6 @@ check_and_install_deps() {
     else
         err "未找到可用的包管理器 (apt/yum/dnf)。请手动安装: ${deps_to_install[*]}"; exit 1
     fi
-
-    for dep in "${deps_to_install[@]}"; do
-        if ! command -v "$dep" >/dev/null 2>&1; then
-            err "依赖 '$dep' 安装失败！请手动安装后重试。"; exit 1
-        fi
-    done
     success "依赖安装成功！"
 }
 
@@ -125,15 +128,17 @@ cleanup_old_install() {
     fi
     # 删除旧的安装目录
     rm -rf "$INSTALL_PATH"
-    # 清理旧的 systemd 服务 (以防万一)
+    # 清理旧的 systemd 服务
     rm -f /etc/systemd/system/nezha-fake-agent.service >/dev/null 2>&1
     systemctl daemon-reload
+    # 清理 crontab 中的旧条目
+    (crontab -l 2>/dev/null | grep -v "${INSTALL_PATH}" | crontab -)
     success "清理完成！"
 }
 
 # 安装 Agent
 install_agent() {
-    info "开始安装 Fake Nezha Agent (screen 模式)..."
+    info "开始安装 Fake Nezha Agent..."
     check_root
     check_and_install_deps
     
@@ -163,7 +168,6 @@ install_agent() {
     info "正在根据官方示例创建 config.yaml..."
     cat > "${INSTALL_PATH}/config.yaml" <<EOF
 # 由一键安装脚本生成
-# --- 核心伪造配置 (严格遵循官方格式) ---
 disable_auto_update: true
 fake: true
 version: 6.6.6
@@ -171,35 +175,39 @@ arch: "${FAKE_ARCH:-taishan64}"
 cpu: "${FAKE_CPU:-HUAWEI Kirin 9000sm 256 Physical Core}"
 platform: "${FAKE_PLATFORM:-HarmonyOS NEXT}"
 disktotal: ${FAKE_DISK_TOTAL:-219902325555200}
-memtotal: ${FAKE_MEM_TOTAL:-549755813888}
-diskmultiple: ${FAKE_DISK_MULTI:-10}
-memmultiple: ${FAKE_MEM_MULTI:-20}
-networkmultiple: ${FAKE_NET_MULTI:-1000}
+memtotal: ${MEM_TOTAL:-549755813888}
+diskmultiple: ${DISK_MULTI:-10}
+memmultiple: ${MEM_MULTI:-20}
+networkmultiple: ${NETWORK_MULTI:-1000}
 ip: "${FAKE_IP:-1.1.1.1}"
 EOF
 
-    info "正在通过环境变量 + 配置文件启动 screen 会话..."
-    # 终极修复：使用 env 将连接信息作为环境变量注入，同时用 -c 加载伪造信息配置文件
-    screen -dmS "$SESSION_NAME" env \
-        NZ_SERVER="${NZ_SERVER}" \
-        NZ_CLIENT_SECRET="${NZ_CLIENT_SECRET}" \
-        NZ_TLS="${NZ_TLS}" \
-        "${INSTALL_PATH}/${agent_exec_name}" -c "${INSTALL_PATH}/config.yaml"
+    # 准备启动命令
+    start_cmd="env NZ_SERVER=\"${NZ_SERVER}\" NZ_CLIENT_SECRET=\"${NZ_CLIENT_SECRET}\" NZ_TLS=\"${NZ_TLS}\" ${INSTALL_PATH}/${agent_exec_name} -c ${INSTALL_PATH}/config.yaml"
+
+    info "正在启动 screen 会话以在后台运行 Agent..."
+    screen -dmS "$SESSION_NAME" bash -c "${start_cmd}"
 
     sleep 2
     if screen -ls | grep -q "$SESSION_NAME"; then
-        success "Fake Nezha Agent 安装并启动成功！恭喜！"
+        info "Agent 已在 screen 会话中成功启动！"
+        # 添加开机自启
+        info "正在添加开机自启任务..."
+        (crontab -l 2>/dev/null | grep -v "${INSTALL_PATH}"; echo "@reboot screen -dmS ${SESSION_NAME} bash -c '${start_cmd}'") | crontab -
+        
+        success "Fake Nezha Agent 安装并配置开机自启成功！"
         info "现在可以去您的哪吒面板查看效果了。"
         info ""
         info "--- Agent 管理命令 ---"
         info "查看运行日志: screen -r ${SESSION_NAME}"
         info "(查看后按 Ctrl+A, 再按 D 即可退出日志界面)"
         info "停止 Agent:  screen -S ${SESSION_NAME} -X quit"
+        info "手动启动:    screen -dmS ${SESSION_NAME} bash -c '${start_cmd}'"
         info "--------------------"
     else
         err "服务启动失败！这非常意外。"
         err "请尝试手动运行启动命令查看报错: "
-        err "env NZ_SERVER=\"${NZ_SERVER}\" NZ_CLIENT_SECRET=\"${NZ_CLIENT_SECRET}\" NZ_TLS=\"${NZ_TLS}\" ${INSTALL_PATH}/${agent_exec_name} -c ${INSTALL_PATH}/config.yaml"
+        err "${start_cmd}"
     fi
 }
 
@@ -212,8 +220,8 @@ uninstall_agent() {
 main() {
     clear
     echo "========================================="
-    echo "  Fake Nezha Agent 一键管理脚本 (v3.0.0 终极稳定版)"
-    echo "         (基于 screen 运行)"
+    echo "  Fake Nezha Agent 一键管理脚本 (v1.0.0)"
+    echo "         (开机自启稳定版)"
     echo "========================================="
     echo ""
     read -rp "请选择要执行的操作: [1]安装 [2]卸载 [0]退出: " option
