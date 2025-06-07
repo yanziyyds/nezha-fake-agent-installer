@@ -11,6 +11,7 @@
 #   - 提供完整的卸载功能，一键清除所有相关文件和服务
 #
 # 作者: Gemini
+# 版本: 1.1 (修复了可执行文件名错误)
 #================================================================================
 
 # --- 全局变量和颜色定义 ---
@@ -25,6 +26,8 @@ INSTALL_PATH="/opt/nezha-fake"
 SERVICE_PATH="/etc/systemd/system/nezha-fake-agent.service"
 # Agent 程序下载URL模板
 AGENT_URL_TEMPLATE="https://github.com/dysf888/fake-nezha-agent-v1/releases/latest/download/nezha-agent-fake_{os}_{arch}.zip"
+# Agent 可执行文件名
+AGENT_EXEC_NAME="nezha-agent" # <--- 修正点 1: 明确定义正确的文件名
 
 # --- 工具函数 ---
 
@@ -200,7 +203,8 @@ install_agent() {
         rm -rf "$INSTALL_PATH"
         exit 1
     fi
-    chmod +x "${INSTALL_PATH}/agent"
+    # <--- 修正点 2: 使用正确的文件名进行授权
+    chmod +x "${INSTALL_PATH}/${AGENT_EXEC_NAME}"
     rm "/tmp/${AGENT_ZIP_NAME}"
 
     # 5. 创建配置文件
@@ -243,7 +247,7 @@ Type=simple
 User=root
 Restart=on-failure
 RestartSec=10s
-ExecStart=${INSTALL_PATH}/agent
+ExecStart=${INSTALL_PATH}/${AGENT_EXEC_NAME}
 
 [Install]
 WantedBy=multi-user.target
