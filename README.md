@@ -24,14 +24,14 @@
 在您的 Linux 服务器上，使用 `root` 权限执行以下命令即可：
 
 ```bash
-bash -c "$(curl -LfsS [https://raw.githubusercontent.com/k08255-lxm/nezha-fake-agent-installer/main/fake_agent.sh](https://raw.githubusercontent.com/k08255-lxm/nezha-fake-agent-installer/main/fake_agent.sh))"
+bash -c "$(curl -LfsS https://raw.githubusercontent.com/k08255-lxm/nezha-fake-agent-installer/main/fake_agent.sh)""
 ```
 
 ### 手动安装
 
 1.  克隆本仓库到您的服务器：
     ```bash
-    git clone [https://github.com/k08255-lxm/nezha-fake-agent-installer.git](https://github.com/k08255-lxm/nezha-fake-agent-installer.git)
+    git clone https://github.com/k08255-lxm/nezha-fake-agent-installer.git
     ```
 2.  进入项目目录：
     ```bash
