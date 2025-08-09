@@ -171,15 +171,15 @@ install_agent() {
 disable_auto_update: true
 fake: true
 version: 6.6.6
-arch: "${FAKE_ARCH:-taishan64}"
-cpu: "${FAKE_CPU:-HUAWEI Kirin 9000sm 256 Physical Core}"
-platform: "${FAKE_PLATFORM:-HarmonyOS NEXT}"
-disktotal: ${FAKE_DISK_TOTAL:-219902325555200}
-memtotal: ${MEM_TOTAL:-549755813888}
-diskmultiple: ${DISK_MULTI:-10}
-memmultiple: ${MEM_MULTI:-20}
-networkmultiple: ${NETWORK_MULTI:-1000}
-ip: "${FAKE_IP:-1.1.1.1}"
+arch: x86_64
+cpu: "Intel Xeon Platinum 8369B"  # 阿里云8代ECS常用CPU
+platform: "CentOS 7.9"            # 企业常用系统
+disktotal: 107374182400           # 100GB（普通云盘）
+memtotal: 34359738368             # 32GB（典型900元档内存）
+diskmultiple: 1                   # 不放大磁盘使用量
+memmultiple: 1                    # 不放大内存使用量
+networkmultiple: 10               # 流量放大10倍（模拟高带宽）
+ip: 192.168.1.100                 # 内网IP（或换成真实公网IP）
 EOF
 
     # 准备启动命令
