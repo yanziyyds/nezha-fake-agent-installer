@@ -1,6 +1,6 @@
 #!/bin/bash
 #=================================================================
-# Fake Nezha Agent 批量管理脚本（优化版：不超出面板占用 + 独立实例）
+# Fake Nezha Agent 批量管理脚本（优化版：不超出面板占用 + 独立实例 + 随机流量）
 #=================================================================
 
 red='\033[0;31m'; green='\033[0;32m'; yellow='\033[0;33m'; plain='\033[0m'
@@ -52,6 +52,8 @@ random_disk() { echo $(( (RANDOM % 65 + 64) * 1024 * 1024 * 1024 )); }
 random_mem()  { echo $(( (RANDOM % 65 + 64) * 1024 * 1024 * 1024 )); }
 random_multiplier() { local min=$1 max=$2; echo $((RANDOM % (max - min + 1) + min)); }
 
+# 新增：随机生成流量总量 (100GB ~ 600GB)
+random_traffic() { echo $(( (RANDOM % 500 + 100) * 1024 * 1024 * 1024 )); }
 
 IP_RANGES=(
 "US:3.0.0.0 3.255.255.255"
@@ -123,6 +125,10 @@ install_instance() {
     DOWNLOAD_MULTI=$(random_multiplier 1 5)
     IP=$(generate_geoip_ip)
 
+    # 新增：每个实例单独的随机上传/下载总量
+    UPLOAD_TOTAL=$(random_traffic)
+    DOWNLOAD_TOTAL=$(random_traffic)
+
     cat > "$INSTALL_PATH/config.yaml" <<EOF
 disable_auto_update: true
 fake: true
@@ -136,6 +142,8 @@ diskmultiple: $DISK_MULTI
 memmultiple: $MEM_MULTI
 network_upload_multiple: $UPLOAD_MULTI
 network_download_multiple: $DOWNLOAD_MULTI
+network_upload_total: $UPLOAD_TOTAL
+network_download_total: $DOWNLOAD_TOTAL
 ip: $IP
 EOF
 
