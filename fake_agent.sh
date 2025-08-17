@@ -176,10 +176,10 @@ cpu: "Intel Xeon Platinum 8369B"  # 阿里云8代ECS常用CPU
 platform: "CentOS 7.9"            # 企业常用系统
 disktotal: 107374182400           # 100GB（普通云盘）
 memtotal: 34359738368             # 32GB（典型900元档内存）
-diskmultiple: 100                   # 不放大磁盘使用量
-memmultiple: 100                    # 不放大内存使用量
-networkmultiple: 1000               # 流量放大10倍（模拟高带宽）
-ip: 35.212.180.186                 # 内网IP（或换成真实公网IP）
+diskmultiple: 10                   # 不放大磁盘使用量
+memmultiple: 10                    # 不放大内存使用量
+networkmultiple: 10000               # 流量放大10倍（模拟高带宽）
+ip: 43.131.225.61                 # 内网IP（或换成真实公网IP）
 EOF
 
     # 准备启动命令
