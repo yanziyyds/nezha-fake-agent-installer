@@ -118,6 +118,24 @@ get_fake_config() {
     read -rp "请输入伪造的IP地址 [默认: 1.1.1.1]: " FAKE_IP
 }
 
+# 彻底清理旧环境
+cleanup_old_install() {
+    info "正在进行彻底清理，确保一个干净的环境..."
+    # 强制杀死可能存在的 screen 会话
+    if screen -ls | grep -q "$SESSION_NAME"; then
+        info "发现旧的 screen 会话，正在终止..."
+        screen -S "$SESSION_NAME" -X quit
+    fi
+    # 删除旧的安装目录
+    rm -rf "$INSTALL_PATH"
+    # 清理旧的 systemd 服务
+    rm -f /etc/systemd/system/nezha-fake-agent.service >/dev/null 2>&1
+    systemctl daemon-reload
+    # 清理 crontab 中的旧条目
+    (crontab -l 2>/dev/null | grep -v "${INSTALL_PATH}" | crontab -)
+    success "清理完成！"
+}
+
 
 # 安装 Agent
 install_agent() {
