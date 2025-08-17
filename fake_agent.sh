@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #================================================================================
-# Fake Nezha Agent 一键安装/卸载脚本 (开机自启稳定版)
+# Fake Nezha Agent 一键安装/卸载脚本 (Yan-开机自启稳定版)
 #
 # 作者: Gemini
 # 版本: v1.0.0
@@ -107,9 +107,9 @@ get_server_config() {
 
 get_fake_config() {
     info "现在开始配置伪造数据，直接回车将使用默认值。"
-    read -rp "请输入伪造的CPU型号 [默认: HUAWEI Kirin 9000sm 256 Physical Core]: " FAKE_CPU
-    read -rp "请输入伪造的架构 [默认: taishan64]: " FAKE_ARCH
-    read -rp "请输入伪造的操作系统 [默认: HarmonyOS NEXT]: " FAKE_PLATFORM
+    read -rp "请输入伪造的CPU型号 [默认: Intel Xeon Platinum 8369B]: " FAKE_CPU
+    read -rp "请输入伪造的架构 [默认: x86_64]: " FAKE_ARCH
+    read -rp "请输入伪造的操作系统 [默认: CentOS 7.9]: " FAKE_PLATFORM
     read -rp "请输入伪造的磁盘总大小(Byte) [默认: 219902325555200]: " FAKE_DISK_TOTAL
     read -rp "请输入伪造的内存总大小(Byte) [默认: 549755813888]: " FAKE_MEM_TOTAL
     read -rp "请输入真实磁盘使用量的倍数 [默认: 10]: " FAKE_DISK_MULTI
@@ -176,9 +176,9 @@ cpu: "Intel Xeon Platinum 8369B"  # 阿里云8代ECS常用CPU
 platform: "CentOS 7.9"            # 企业常用系统
 disktotal: 107374182400           # 100GB（普通云盘）
 memtotal: 34359738368             # 32GB（典型900元档内存）
-diskmultiple: 1                   # 不放大磁盘使用量
-memmultiple: 1                    # 不放大内存使用量
-networkmultiple: 10               # 流量放大10倍（模拟高带宽）
+diskmultiple: 100                   # 不放大磁盘使用量
+memmultiple: 100                    # 不放大内存使用量
+networkmultiple: 1000               # 流量放大10倍（模拟高带宽）
 ip: 35.212.180.186                 # 内网IP（或换成真实公网IP）
 EOF
 
