@@ -1,6 +1,6 @@
 #!/bin/bash
 #=================================================================
-# Fake Nezha Agent 批量管理脚本（优化版：不超出面板占用 + 独立实例 + 随机流量）
+# Fake Nezha Agent 批量管理脚本（增强版：随机带宽 1~50，定时动态跳动）
 #=================================================================
 
 red='\033[0;31m'; green='\033[0;32m'; yellow='\033[0;33m'; plain='\033[0m'
@@ -46,13 +46,9 @@ parse_install_cmd() {
 }
 
 random_choice() { local arr=("$@"); echo "${arr[$RANDOM % ${#arr[@]}]}"; }
-# 限制 disktotal 64~128GB
 random_disk() { echo $(( (RANDOM % 65 + 64) * 1024 * 1024 * 1024 )); }
-# 限制 memtotal 64~128GB
 random_mem()  { echo $(( (RANDOM % 65 + 64) * 1024 * 1024 * 1024 )); }
 random_multiplier() { local min=$1 max=$2; echo $((RANDOM % (max - min + 1) + min)); }
-
-# 新增：随机生成流量总量 (100GB ~ 600GB)
 random_traffic() { echo $(( (RANDOM % 500 + 100) * 1024 * 1024 * 1024 )); }
 
 IP_RANGES=(
@@ -105,6 +101,7 @@ cleanup_instance() {
 install_instance() {
     local idx=$1
     INSTALL_PATH="/opt/nezha-fake-$idx"
+    CONFIG_FILE="$INSTALL_PATH/config.yaml"
     info "安装实例 $idx 到 $INSTALL_PATH"
     mkdir -p "$INSTALL_PATH"
     download_agent "$AGENT_URL" "/tmp/nezha-agent-fake.zip"
@@ -121,15 +118,14 @@ install_instance() {
     MEM_TOTAL=$(random_mem)
     DISK_MULTI=$(random_multiplier 1 2)
     MEM_MULTI=$(random_multiplier 1 3)
-    UPLOAD_MULTI=$(random_multiplier 1 5)
-    DOWNLOAD_MULTI=$(random_multiplier 1 5)
     IP=$(generate_geoip_ip)
 
-    # 新增：每个实例单独的随机上传/下载总量
+    UPLOAD_MULTI=$(random_multiplier 1 50)
+    DOWNLOAD_MULTI=$(random_multiplier 1 50)
     UPLOAD_TOTAL=$(random_traffic)
     DOWNLOAD_TOTAL=$(random_traffic)
 
-    cat > "$INSTALL_PATH/config.yaml" <<EOF
+    cat > "$CONFIG_FILE" <<EOF
 disable_auto_update: true
 fake: true
 version: 6.6.6
@@ -157,7 +153,7 @@ WorkingDirectory=$INSTALL_PATH
 Environment=NZ_SERVER=${NZ_SERVER}
 Environment=NZ_CLIENT_SECRET=${NZ_CLIENT_SECRET}
 Environment=NZ_TLS=${NZ_TLS}
-ExecStart=$INSTALL_PATH/$agent_exec_name -c $INSTALL_PATH/config.yaml
+ExecStart=$INSTALL_PATH/$agent_exec_name -c $CONFIG_FILE
 Restart=always
 RestartSec=5
 [Install]
@@ -166,6 +162,25 @@ SERVICE
 
     systemctl daemon-reload
     systemctl enable --now "nezha-fake-agent-$idx"
+
+    # 动态带宽跳动脚本
+    cat > "$INSTALL_PATH/update_bandwidth.sh" <<'UPD'
+#!/bin/bash
+CONFIG_FILE="$1"
+SERVICE_NAME="$2"
+random_multiplier() { local min=$1 max=$2; echo $((RANDOM % (max - min + 1) + min)); }
+while true; do
+    UPLOAD_MULTI=$(random_multiplier 1 50)
+    DOWNLOAD_MULTI=$(random_multiplier 1 50)
+    sed -i "s/^network_upload_multiple:.*/network_upload_multiple: $UPLOAD_MULTI/" "$CONFIG_FILE"
+    sed -i "s/^network_download_multiple:.*/network_download_multiple: $DOWNLOAD_MULTI/" "$CONFIG_FILE"
+    systemctl restart "$SERVICE_NAME"
+    sleep 300
+done
+UPD
+    chmod +x "$INSTALL_PATH/update_bandwidth.sh"
+    nohup "$INSTALL_PATH/update_bandwidth.sh" "$CONFIG_FILE" "nezha-fake-agent-$idx" >/dev/null 2>&1 &
+
     success "实例 $idx 安装完成 (IP: $IP, CPU: $CPU, 平台: $PLATFORM)"
     info "日志查看: journalctl -u nezha-fake-agent-$idx -f"
 }
@@ -180,6 +195,7 @@ uninstall_all() {
         systemctl disable "$name"
         rm -f "$service"
     done
+    pkill -f update_bandwidth.sh
     rm -rf /opt/nezha-fake-*
     systemctl daemon-reload
     success "所有实例已卸载完成"
