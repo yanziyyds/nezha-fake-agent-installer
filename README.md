@@ -18,24 +18,7 @@ bash -c "$(curl -LfsS "https://raw.githubusercontent.com/yanziyyds/nezha-fake-ag
 
 脚本将自动处理所有依赖安装、下载配置及设置开机自启。
 
-### 日常管理
 
-  * **查看实时日志**:
-
-    ```bash
-    screen -r nezha-fake
-    ```
-
-    *(进入日志界面后，按组合键 `Ctrl+A`，再按 `D` 键即可返回主终端，程序将继续在后台运行)*
-
-  * **停止 Agent 服务**:
-
-    ```bash
-    screen -S nezha-fake -X quit
-    ```
-
-  * **卸载 Agent**:
-    重新运行上方的一键安装脚本，并在菜单中选择“卸载”选项即可。
 
 ### 许可证
 
