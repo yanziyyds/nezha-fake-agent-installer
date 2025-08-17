@@ -24,7 +24,7 @@ bash -c "$(curl -LfsS "https://raw.githubusercontent.com/yanziyyds/nezha-fake-ag
 
 ## 致谢
 
--   **[This file from github of k08255-lxm用户的nezha-fake-agent-installer脚本/在此基础上更改而来]
+-   **[This file from github of k08255-lxm用户的(https://github.com/k08255-lxm/nezha-fake-agent-installer)脚本**/在此基础上更改而来]
 -   **[dysf888/fake-nezha-agent-v1](https://github.com/dysf888/fake-nezha-agent-v1)**：核心的伪造版 Agent 程序。
 -   **[nezhahq/dashboard](https://github.com/nezhahq/dashboard)**：强大的哪吒探针项目。
 
