@@ -114,7 +114,7 @@ get_fake_config() {
     read -rp "请输入伪造的内存总大小(Byte) [默认: 549755813888]: " FAKE_MEM_TOTAL
     read -rp "请输入真实磁盘使用量的倍数 [默认: 10]: " FAKE_DISK_MULTI
     read -rp "请输入真实内存使用量的倍数 [默认: 20]: " FAKE_MEM_MULTI
-    read -rp "请输入真实网络流量的倍数 [默认: 100]: " FAKE_NET_MULTI
+    read -rp "请输入真实网络流量的倍数 [默认: 1]: " FAKE_NET_MULTI
     read -rp "请输入伪造的IP地址 [默认: 1.1.1.1]: " FAKE_IP
 }
 
