@@ -6,8 +6,6 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Language](https://img.shields.io/badge/language-Shell-blue.svg)](./fake_agent.sh)
 
-一个用于稳定运行 `dysf888/fake-nezha-agent-v1` 的终极解决方案，通过 `screen` 和 `cron` 解决了原程序存在的后台运行及开机自启缺陷。
-
 ### 一键安装
 
 请以 `root` 权限，在您的 Linux 服务器上执行以下命令：
