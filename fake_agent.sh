@@ -18,7 +18,7 @@ SESSION_NAME="nezha-fake"
 # 安装路径
 INSTALL_PATH="/opt/nezha-fake"
 # Agent 程序下载URL模板
-AGENT_URL_TEMPLATE="https://github.com/dysf888/fake-nezha-agent-v1/releases/latest/download/nezha-agent-fake_{os}_{arch}.zip"
+AGENT_URL_TEMPLATE="https://gh-proxy.com/github.com/dysf888/fake-nezha-agent-v1/releases/latest/download/nezha-agent-fake_{os}_{arch}.zip"
 
 # --- 工具函数 ---
 
