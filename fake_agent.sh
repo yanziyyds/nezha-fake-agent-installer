@@ -1,9 +1,8 @@
 #!/bin/bash
 #================================================================================
-# Fake Nezha Agent 一键安装/卸载脚本 (Yan-增强版)
+# Fake Nezha Agent 一键安装/卸载脚本 (Yan-增强版 v1.2)
 #
 # 作者: Gemini + ChatGPT
-# 版本: v1.1.0
 #================================================================================
 
 # --- 全局变量和颜色定义 ---
@@ -28,7 +27,6 @@ check_root() {
     fi
 }
 
-# 检查并安装依赖
 check_and_install_deps() {
     info "正在检查并安装所需依赖 (curl, unzip, screen, cron/systemd)..."
     local deps_to_install=()
@@ -134,7 +132,6 @@ get_fake_config() {
     read -rp "请输入伪造的IP地址 [默认: 1.1.1.1]: " FAKE_IP
 }
 
-# 彻底清理旧环境
 cleanup_old_install() {
     info "正在清理旧环境..."
     if screen -ls | grep -q "$SESSION_NAME"; then
@@ -165,7 +162,6 @@ install_agent() {
     agent_exec_name=$(ls "$INSTALL_PATH" | head -n1)
     chmod +x "${INSTALL_PATH}/${agent_exec_name}"
 
-    # 写入配置文件
     cat > "${INSTALL_PATH}/config.yaml" <<EOF
 disable_auto_update: true
 fake: true
@@ -181,7 +177,7 @@ networkmultiple: ${FAKE_NET_MULTI:-1}
 ip: ${FAKE_IP:-1.1.1.1}
 EOF
 
-    start_cmd="env NZ_SERVER=\"${NZ_SERVER}\" NZ_CLIENT_SECRET=\"${NZ_CLIENT_SECRET}\" NZ_TLS=\"${NZ_TLS}\" ${INSTALL_PATH}/${agent_exec_name} -c ${INSTALL_PATH}/config.yaml"
+    start_cmd="${INSTALL_PATH}/${agent_exec_name} -c ${INSTALL_PATH}/config.yaml"
 
     echo "请选择运行方式："
     echo "1) 使用 systemd (推荐, 更稳定)"
@@ -189,6 +185,7 @@ EOF
     read -rp "请输入选项 [1-2]: " run_choice
 
     if [[ "$run_choice" == "1" ]]; then
+        # systemd 服务文件
         cat > /etc/systemd/system/nezha-fake-agent.service <<SERVICE
 [Unit]
 Description=Fake Nezha Agent
@@ -196,19 +193,28 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=$start_cmd
+WorkingDirectory=${INSTALL_PATH}
+Environment=NZ_SERVER=${NZ_SERVER}
+Environment=NZ_CLIENT_SECRET=${NZ_CLIENT_SECRET}
+Environment=NZ_TLS=${NZ_TLS}
+ExecStart=${start_cmd}
 Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 SERVICE
+
         systemctl daemon-reload
         systemctl enable --now nezha-fake-agent
         success "安装完成，已通过 systemd 启动并设置开机自启！"
+        info "查看运行状态: systemctl status nezha-fake-agent -l"
+        info "实时查看日志: journalctl -u nezha-fake-agent -f"
     else
-        screen -dmS "$SESSION_NAME" bash -c "${start_cmd}"
-        (crontab -l 2>/dev/null | grep -v "${INSTALL_PATH}"; echo "@reboot screen -dmS ${SESSION_NAME} bash -c '${start_cmd}'") | crontab -
+        screen -dmS "$SESSION_NAME" bash -c "env NZ_SERVER=\"${NZ_SERVER}\" NZ_CLIENT_SECRET=\"${NZ_CLIENT_SECRET}\" NZ_TLS=\"${NZ_TLS}\" $start_cmd"
+        (crontab -l 2>/dev/null | grep -v "${INSTALL_PATH}"; echo "@reboot screen -dmS ${SESSION_NAME} bash -c 'env NZ_SERVER=\"${NZ_SERVER}\" NZ_CLIENT_SECRET=\"${NZ_CLIENT_SECRET}\" NZ_TLS=\"${NZ_TLS}\" $start_cmd'") | crontab -
         success "安装完成，已通过 screen 启动并配置开机自启！"
+        info "查看日志: screen -r ${SESSION_NAME} (退出 Ctrl+A D)"
     fi
 }
 
@@ -221,7 +227,7 @@ uninstall_agent() {
 main() {
     clear
     echo "========================================="
-    echo "  Fake Nezha Agent 一键管理脚本 (v1.1.0)"
+    echo "  Fake Nezha Agent 一键管理脚本 (v1.2)"
     echo "         (Yan-增强版)"
     echo "========================================="
     echo ""
