@@ -179,7 +179,7 @@ memtotal: 34359738368             # 32GB（典型900元档内存）
 diskmultiple: 1                   # 不放大磁盘使用量
 memmultiple: 1                    # 不放大内存使用量
 networkmultiple: 1               # 流量放大10倍（模拟高带宽）
-ip: 43.131.225.61                 # 内网IP（或换成真实公网IP）
+ip: 1.1.1.1                 # 内网IP（或换成真实公网IP）
 EOF
 
     # 准备启动命令
