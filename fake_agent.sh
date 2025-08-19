@@ -1,6 +1,6 @@
 #!/bin/bash
 #=================================================================
-# Fake Nezha Agent 批量管理脚本（增强版：随机带宽 1~50，定时动态跳动）
+# Fake Nezha Agent 批量管理脚本（增强版：随机带宽 1~50，定时动态跳动 + 状态管理）
 #=================================================================
 
 red='\033[0;31m'; green='\033[0;32m'; yellow='\033[0;33m'; plain='\033[0m'
@@ -201,6 +201,37 @@ uninstall_all() {
     success "所有实例已卸载完成"
 }
 
+show_status_all() {
+    echo "========= Fake Agent 状态 ========="
+    for service in /etc/systemd/system/nezha-fake-agent-*.service; do
+        [[ -f "$service" ]] || continue
+        name=$(basename "$service" .service)
+        state=$(systemctl is-active "$name")
+        echo "$name : $state"
+    done
+    echo "=================================="
+}
+
+restart_all() {
+    echo "正在重启所有实例..."
+    for service in /etc/systemd/system/nezha-fake-agent-*.service; do
+        [[ -f "$service" ]] || continue
+        name=$(basename "$service" .service)
+        systemctl restart "$name"
+    done
+    success "所有实例已重启完成"
+}
+
+stop_all() {
+    echo "正在停止所有实例..."
+    for service in /etc/systemd/system/nezha-fake-agent-*.service; do
+        [[ -f "$service" ]] || continue
+        name=$(basename "$service" .service)
+        systemctl stop "$name"
+    done
+    success "所有实例已停止"
+}
+
 main() {
     clear
     echo "=============================="
@@ -213,7 +244,10 @@ main() {
     echo "请选择操作:"
     echo "1) 批量安装实例"
     echo "2) 卸载所有实例"
-    read -rp "请输入选项 [1-2]: " op
+    echo "3) 查看所有实例运行状态"
+    echo "4) 重启所有实例"
+    echo "5) 停止所有实例"
+    read -rp "请输入选项 [1-5]: " op
 
     case "$op" in
         1)
@@ -226,6 +260,9 @@ main() {
             success "全部 $N 个实例安装完成！"
             ;;
         2) uninstall_all ;;
+        3) show_status_all ;;
+        4) restart_all ;;
+        5) stop_all ;;
         *) err "无效选项" ;;
     esac
 }
