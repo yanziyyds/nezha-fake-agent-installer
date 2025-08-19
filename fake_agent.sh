@@ -1,6 +1,6 @@
 #!/bin/bash
 #=================================================================
-# Fake Nezha Agent 批量管理脚本（增强版：随机带宽 1~50，定时动态跳动 + 状态管理）
+# Fake Nezha Agent 批量管理脚本（增强版：支持自定义修改配置 + 批量修改优化）
 #=================================================================
 
 red='\033[0;31m'; green='\033[0;32m'; yellow='\033[0;33m'; plain='\033[0m'
@@ -162,29 +162,69 @@ SERVICE
 
     systemctl daemon-reload
     systemctl enable --now "nezha-fake-agent-$idx"
-
-    # 动态带宽跳动脚本
-    cat > "$INSTALL_PATH/update_bandwidth.sh" <<'UPD'
-#!/bin/bash
-CONFIG_FILE="$1"
-SERVICE_NAME="$2"
-random_multiplier() { local min=$1 max=$2; echo $((RANDOM % (max - min + 1) + min)); }
-while true; do
-    UPLOAD_MULTI=$(random_multiplier 1 50)
-    DOWNLOAD_MULTI=$(random_multiplier 1 50)
-    sed -i "s/^network_upload_multiple:.*/network_upload_multiple: $UPLOAD_MULTI/" "$CONFIG_FILE"
-    sed -i "s/^network_download_multiple:.*/network_download_multiple: $DOWNLOAD_MULTI/" "$CONFIG_FILE"
-    systemctl restart "$SERVICE_NAME"
-    sleep 300
-done
-UPD
-    chmod +x "$INSTALL_PATH/update_bandwidth.sh"
-    nohup "$INSTALL_PATH/update_bandwidth.sh" "$CONFIG_FILE" "nezha-fake-agent-$idx" >/dev/null 2>&1 &
-
     success "实例 $idx 安装完成 (IP: $IP, CPU: $CPU, 平台: $PLATFORM)"
-    info "日志查看: journalctl -u nezha-fake-agent-$idx -f"
 }
 
+# ===== 修改单个实例配置 =====
+modify_config() {
+    local target=$1
+    local config_file="/opt/nezha-fake-$target/config.yaml"
+    [[ -f "$config_file" ]] || { err "找不到配置文件 $config_file"; return; }
+
+    read -rp "请输入 CPU 型号 (直接回车保持不变): " new_cpu
+    read -rp "请输入内存大小(GB): " new_mem
+    read -rp "请输入硬盘大小(GB): " new_disk
+    read -rp "请输入上传带宽倍数: " new_up
+    read -rp "请输入下载带宽倍数: " new_down
+
+    [[ -n "$new_cpu" ]] && sed -i "s|^cpu:.*|cpu: \"$new_cpu\"|" "$config_file"
+    [[ -n "$new_mem" ]] && sed -i "s|^memtotal:.*|memtotal: $((new_mem * 1024 * 1024 * 1024))|" "$config_file"
+    [[ -n "$new_disk" ]] && sed -i "s|^disktotal:.*|disktotal: $((new_disk * 1024 * 1024 * 1024))|" "$config_file"
+    [[ -n "$new_up" ]] && sed -i "s|^network_upload_multiple:.*|network_upload_multiple: $new_up|" "$config_file"
+    [[ -n "$new_down" ]] && sed -i "s|^network_download_multiple:.*|network_download_multiple: $new_down|" "$config_file"
+
+    systemctl restart "nezha-fake-agent-$target"
+    success "实例 $target 配置已更新并重启"
+}
+
+# ===== 批量修改所有实例配置 =====
+modify_all() {
+    read -rp "请输入 CPU 型号 (直接回车保持不变): " new_cpu
+    read -rp "请输入内存大小(GB，直接回车保持不变): " new_mem
+    read -rp "请输入硬盘大小(GB，直接回车保持不变): " new_disk
+    read -rp "请输入上传倍数(直接回车保持不变): " new_up
+    read -rp "请输入下载倍数(直接回车保持不变): " new_down
+
+    local any_found=false
+    local modified_instances=()
+
+    for config in /opt/nezha-fake-*/config.yaml; do
+        [[ -f "$config" ]] || continue
+        any_found=true
+        idx=$(basename "$(dirname "$config")" | awk -F- '{print $3}')
+
+        [[ -n "$new_cpu" ]] && sed -i "s|^cpu:.*|cpu: \"$new_cpu\"|" "$config"
+        [[ -n "$new_mem" ]] && sed -i "s|^memtotal:.*|memtotal: $((new_mem * 1024 * 1024 * 1024))|" "$config"
+        [[ -n "$new_disk" ]] && sed -i "s|^disktotal:.*|disktotal: $((new_disk * 1024 * 1024 * 1024))|" "$config"
+        [[ -n "$new_up" ]] && sed -i "s|^network_upload_multiple:.*|network_upload_multiple: $new_up|" "$config"
+        [[ -n "$new_down" ]] && sed -i "s|^network_download_multiple:.*|network_download_multiple: $new_down|" "$config"
+
+        modified_instances+=("$idx")
+    done
+
+    if ! $any_found; then
+        info "没有找到任何实例配置文件可修改"
+        return
+    fi
+
+    # 批量重启所有修改过的实例
+    for idx in "${modified_instances[@]}"; do
+        systemctl restart "nezha-fake-agent-$idx" 2>/dev/null || err "实例 $idx 重启失败"
+        success "实例 $idx 配置已更新并重启"
+    done
+}
+
+# ===== 其他操作 =====
 uninstall_all() {
     read -rp "确认要卸载所有实例吗？(y/n): " confirm
     [[ "$confirm" != "y" && "$confirm" != "Y" ]] && return
@@ -195,7 +235,6 @@ uninstall_all() {
         systemctl disable "$name"
         rm -f "$service"
     done
-    pkill -f update_bandwidth.sh
     rm -rf /opt/nezha-fake-*
     systemctl daemon-reload
     success "所有实例已卸载完成"
@@ -247,7 +286,9 @@ main() {
     echo "3) 查看所有实例运行状态"
     echo "4) 重启所有实例"
     echo "5) 停止所有实例"
-    read -rp "请输入选项 [1-5]: " op
+    echo "6) 批量修改所有实例配置"
+    echo "7) 修改单个实例配置"
+    read -rp "请输入选项 [1-7]: " op
 
     case "$op" in
         1)
@@ -263,6 +304,11 @@ main() {
         3) show_status_all ;;
         4) restart_all ;;
         5) stop_all ;;
+        6) modify_all ;;
+        7)
+            read -rp "请输入要修改的实例编号: " idx
+            modify_config $idx
+            ;;
         *) err "无效选项" ;;
     esac
 }
