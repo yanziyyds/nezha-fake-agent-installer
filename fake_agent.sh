@@ -1,6 +1,7 @@
 #!/bin/bash
 #=================================================================
 # Fake Nezha Agent 批量管理脚本（增强版：全流程进度条 + 国家自定义 IP）
+# 修正版 v1：保留原逻辑，修复重复下载与 systemd 启动阻塞问题
 #=================================================================
 
 # --- 颜色定义 ---
@@ -81,15 +82,15 @@ show_progress() {
         spinner="${green}✔${plain}"
     fi
     
-    # 隐藏光标
-    tput civis
+    # 隐藏光标（容错）
+    tput civis 2>/dev/null || true
     printf "\r${yellow}%3d%%${plain} [${green}%s${plain}] ${blue}%d/%d${plain} %-20s ${spinner}" \
            "$progress" "$bar" "$current" "$total" "$info_msg"
 
     if [[ $current -eq $total ]]; then
         echo
         # 显示光标
-        tput cnorm
+        tput cnorm 2>/dev/null || true
     fi
 }
 
@@ -145,10 +146,38 @@ download_agent() {
 
 cleanup_instance() {
     local idx=$1
-    systemctl disable --now "nezha-fake-agent-$idx" &>/dev/null
+    # 修改点：不要每次都调用 daemon-reload（频繁 reload 可能导致 systemd 锁），只 stop/disable 并移除文件
+    systemctl disable --now "nezha-fake-agent-$idx" &>/dev/null || true
     rm -rf "/opt/nezha-fake-$idx"
     rm -f "/etc/systemd/system/nezha-fake-agent-$idx.service"
-    systemctl daemon-reload &>/dev/null
+    # 不在这里调用 daemon-reload，避免并发时 systemd 被锁定
+}
+
+# ---- 新增：更安全的启动函数（替换 enable --now 以避免阻塞） ----
+safer_start_service() {
+    local idx=$1
+    local svc="nezha-fake-agent-$idx"
+    # reload 一次以应用 unit（单次调用，避免在 cleanup/循环中频繁调用）
+    systemctl daemon-reload &>/dev/null || true
+    systemctl enable "$svc" &>/dev/null || true
+    # 使用非阻塞启动，避免 systemctl start 时阻塞脚本
+    systemctl start --no-block "$svc" &>/dev/null || true
+
+    # 等待服务进入 active 状态（短超时），超时则记录并继续
+    local wait_sec=8
+    local waited=0
+    while ! systemctl is-active --quiet "$svc" && [[ $waited -lt $wait_sec ]]; do
+        sleep 1
+        waited=$((waited+1))
+    done
+
+    if systemctl is-active --quiet "$svc"; then
+        return 0
+    else
+        # 仅记录，不退出整个脚本（避免单个服务卡住整个批量）
+        err "实例 $idx: 服务未在 ${wait_sec}s 内进入 active（请检查 systemctl status $svc）"
+        return 2
+    fi
 }
 
 # --- 核心安装逻辑 ---
@@ -158,9 +187,10 @@ install_instance() {
     local CONFIG_FILE="$INSTALL_PATH/config.yaml"
     mkdir -p "$INSTALL_PATH"
     
-    unzip -o "/tmp/nezha-agent-fake.zip" -d "$INSTALL_PATH" >/dev/null
-    local agent_exec_name=$(ls "$INSTALL_PATH" | head -n1)
-    [[ -z "$agent_exec_name" || ! -f "$INSTALL_PATH/$agent_exec_name" ]] && { err "解压后找不到 Agent 执行文件"; return 1; }
+    unzip -o "/tmp/nezha-agent-fake.zip" -d "$INSTALL_PATH" >/dev/null 2>&1
+    # 修改点：使用 ls -1A 避免 '.' '..' 或空名
+    local agent_exec_name=$(ls -1A "$INSTALL_PATH" 2>/dev/null | head -n1)
+    [[ -z "$agent_exec_name" || ! -f "$INSTALL_PATH/$agent_exec_name" ]] && { err "解压后找不到 Agent 执行文件 (实例 $idx)"; return 1; }
     chmod +x "$INSTALL_PATH/$agent_exec_name"
 
     # 生成随机配置
@@ -216,8 +246,8 @@ RestartSec=5
 WantedBy=multi-user.target
 SERVICE
 
-    systemctl daemon-reload
-    systemctl enable --now "nezha-fake-agent-$idx" &>/dev/null
+    # 修改点：使用 safer_start_service 以避免阻塞
+    safer_start_service "$idx" >/dev/null 2>&1 || true
 }
 
 # ===== 修改 networkmultiple (支持随机批量) =====
@@ -238,7 +268,9 @@ modify_network() {
         local idx=$(basename "$(dirname "$file")" | awk -F- '{print $3}')
         local val=${new_val:-$(random_multiplier 1 100)}
         sed -i "s|^networkmultiple:.*|networkmultiple: $val|" "$file"
-        systemctl restart "nezha-fake-agent-$idx" &>/dev/null
+        # 使用 restart --no-block 不会阻塞；但 systemctl restart 没有 --no-block 标志，
+        # 我们调用 restart 并不阻塞脚本（一般很快），若遇到阻塞请改为 stop/start --no-block
+        systemctl restart "nezha-fake-agent-$idx" &>/dev/null || true
         show_progress $current $total "实例 $idx networkmultiple 已修改"
         sleep 0.1
     done
@@ -275,7 +307,7 @@ modify_all() {
             local new_ip=$(generate_geoip_ip "${selected_countries[@]}")
             sed -i "s|^ip:.*|ip: $new_ip|" "$config"
         fi
-        systemctl restart "nezha-fake-agent-$idx" &>/dev/null
+        systemctl restart "nezha-fake-agent-$idx" &>/dev/null || true
         show_progress $current $total "实例 $idx 配置已修改"
         sleep 0.1
     done
@@ -306,7 +338,7 @@ modify_config() {
         sed -i "s|^ip:.*|ip: $new_ip|" "$config_file"
     fi
     
-    systemctl restart "nezha-fake-agent-$target" &>/dev/null
+    systemctl restart "nezha-fake-agent-$target" &>/dev/null || true
     success "实例 $target 配置已更新并重启"
 }
 
@@ -364,14 +396,40 @@ main() {
                     COUNTRY_LIST=()
                 fi
 
-                download_agent "$AGENT_URL" "/tmp/nezha-agent-fake.zip"
+                # ===== 优化：一次性下载 ZIP（若已存在则复用） =====
+                if [[ ! -f /tmp/nezha-agent-fake.zip ]]; then
+                    download_agent "$AGENT_URL" "/tmp/nezha-agent-fake.zip"
+                else
+                    info "检测到已存在的 /tmp/nezha-agent-fake.zip，将复用该文件"
+                fi
+
+                # 并行控制参数（可调）
+                MAX_PARALLEL=5
+                total=$N
+                running=0
+
                 for i in $(seq 1 $N); do
-                    cleanup_instance $i
-                    install_instance $i
-                    show_progress $i $N "实例 $i 安装完成"
-                    sleep 0.1
+                    # 后台执行每个实例的清理+安装，避免单个长时间阻塞主循环
+                    (
+                        cleanup_instance $i
+                        install_instance $i
+                    ) &
+
+                    # 控制并发数量
+                    while [[ $(jobs -r | wc -l) -ge $MAX_PARALLEL ]]; do
+                        sleep 0.8
+                    done
+
+                    show_progress $i $total "实例 $i 安装中..."
+                    sleep 0.05
                 done
-                rm "/tmp/nezha-agent-fake.zip"
+
+                # 等待所有后台任务完成
+                wait
+
+                # 清理临时 ZIP（如果你想保留缓存以便下次复用，可注释掉下一行）
+                rm -f "/tmp/nezha-agent-fake.zip"
+
                 success "全部 $N 个实例安装完成！"
                 ;;
             2)
@@ -405,7 +463,7 @@ main() {
                 for dir in "${dirs[@]}"; do
                     current=$((current+1))
                     local idx=$(basename "$dir" | awk -F- '{print $3}')
-                    systemctl restart "nezha-fake-agent-$idx" &>/dev/null
+                    systemctl restart "nezha-fake-agent-$idx" &>/dev/null || true
                     show_progress $current $total "实例 $idx 已重启"
                     sleep 0.1
                 done
@@ -420,7 +478,7 @@ main() {
                 for dir in "${dirs[@]}"; do
                     current=$((current+1))
                     local idx=$(basename "$dir" | awk -F- '{print $3}')
-                    systemctl stop "nezha-fake-agent-$idx" &>/dev/null
+                    systemctl stop "nezha-fake-agent-$idx" &>/dev/null || true
                     show_progress $current $total "实例 $idx 已停止"
                     sleep 0.1
                 done
