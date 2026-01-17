@@ -1,290 +1,423 @@
 #!/bin/bash
 #================================================================================
-# Name:        Cyberpunk Fake Nezha Manager
-# Description: 批量管理伪装哪吒探针 (UI增强 + 架构自动修复版)
-# Version:     2.0 Pro
-# Author:      Gemini AI
+# Name:        Cyberpunk Fake Nezha Manager (Ultimate Edition)
+# Description: 完整功能保留 + 炫酷UI + 架构修复 + 进程防阻塞
+# Version:     3.0 Ultimate
 #================================================================================
 
-# --- 霓虹配色定义 ---
+# --- 🎨 霓虹配色定义 ---
 c_reset='\033[0m'
 c_red='\033[1;31m'; c_green='\033[1;32m'; c_yellow='\033[1;33m'
 c_blue='\033[1;34m'; c_purple='\033[1;35m'; c_cyan='\033[1;36m'
 c_white='\033[1;37m'
 bg_red='\033[41;37m'; bg_green='\033[42;37m'
 
-# --- 基础工具函数 ---
+# --- 📟 信息输出函数 ---
 err() { echo -e "${bg_red} [ERROR] ${c_reset} ${c_red}$1${c_reset}"; }
 success() { echo -e "${bg_green} [SUCCESS] ${c_reset} ${c_green}$1${c_reset}"; }
 info() { echo -e "${c_cyan}[INFO]${c_reset} $1"; }
-warn() { echo -e "${c_yellow}[WARN]${c_reset} $1"; }
+prompt() { echo -en "${c_purple}👉 $1${c_reset}"; }
 
-# --- 权限与依赖 ---
-check_root() { [[ $EUID -ne 0 ]] && err "请切换到 root 用户运行！(sudo -i)" && exit 1; }
+# --- 🛡️ 权限与依赖检查 ---
+check_root() { [[ $EUID -ne 0 ]] && err "请以 root 权限运行！(sudo -i)" && exit 1; }
 
-check_deps() {
+check_and_install_deps() {
     local deps=(curl unzip screen tput bc)
     local install_cmd=""
     
     if command -v apt-get >/dev/null 2>&1; then install_cmd="apt-get install -y"
     elif command -v yum >/dev/null 2>&1; then install_cmd="yum install -y"
     elif command -v dnf >/dev/null 2>&1; then install_cmd="dnf install -y"
-    else err "未检测到支持的包管理器，请手动安装: ${deps[*]}"; exit 1; fi
+    else err "无法自动安装依赖，请手动安装: ${deps[*]}"; exit 1; fi
 
     for dep in "${deps[@]}"; do
-        if ! command -v $dep >/dev/null 2>&1; then
+        command -v $dep >/dev/null 2>&1 || {
             info "正在安装依赖: ${c_yellow}$dep${c_reset}..."
             $install_cmd $dep >/dev/null 2>&1
-        fi
+        }
     done
 }
 
-# --- 架构自适应检测 (修复版) ---
+# --- ⚙️ 系统架构检测 (已修复) ---
 detect_arch() {
-    local arch_raw=$(uname -m)
-    case "$arch_raw" in
-        x86_64|amd64) ARCH_CODE="amd64" ;;
-        aarch64|arm64) ARCH_CODE="arm64" ;;
-        *) err "不支持的 CPU 架构: $arch_raw"; exit 1 ;;
+    case "$(uname -s)" in Linux) os="linux";; *) err "不支持系统: $(uname -s)"; exit 1;; esac
+    
+    local raw_arch=$(uname -m)
+    case "$raw_arch" in
+        x86_64|amd64) arch="amd64";;
+        aarch64|arm64) arch="arm64";;
+        i386|i686) arch="386";;
+        *arm*) arch="arm";;
+        *) err "不支持架构: $raw_arch"; exit 1;;
     esac
-    # 动态拼接下载地址
-    AGENT_URL="https://gh-proxy.com/https://github.com/dysf888/fake-nezha-agent-v1/releases/latest/download/nezha-agent-fake_linux_${ARCH_CODE}.zip"
+    # 动态拼接下载地址，修复 ARM 下载错误
+    AGENT_URL="https://gh-proxy.com/https://github.com/dysf888/fake-nezha-agent-v1/releases/latest/download/nezha-agent-fake_linux_${arch}.zip"
 }
 
-# --- UI 组件: 头部 Banner ---
+# --- 🖥️ UI 组件: 头部 Banner ---
 show_banner() {
     clear
     local sys_os=$(cat /etc/os-release | grep PRETTY_NAME | cut -d '"' -f 2)
     local sys_kernel=$(uname -r)
     local sys_uptime=$(uptime -p | sed 's/up //')
-    local sys_arch=$(uname -m)
 
     echo -e "${c_purple}==============================================================${c_reset}"
-    echo -e "${c_cyan}"
-    echo -e "   █████▒▄▄▄       ██ ▄█▀▓█████     ███▄    █ ▓█████ ▒█████   "
-    echo -e " ▓██   ▒▒████▄     ██▄█▒ ▓█   ▀     ██ ▀█   █ ▓█   ▀▒██▒  ██▒ "
-    echo -e " ▒████ ░▒██  ▀█▄  ▓███▄░ ▒███      ▓██  ▀█ ██▒▒███  ▒██░  ██▒ "
-    echo -e " ░▓█▒  ░░██▄▄▄▄██ ▓██ █▄ ▒▓█  ▄    ▓██▒  ▐▌██▒▒▓█  ▄▒██   ██░ "
-    echo -e " ░▒█░    ▓█   ▓██▒▒██▒ █▄░▒████▒   ▒██░   ▓██░░▒████▒ ████▓▒░ "
-    echo -e "  ▒ ░    ▒▒   ▓▒█░▒ ▒▒ ▓▒░░ ▒░ ░   ░ ▒░   ▒ ▒ ░░ ▒░ ░ ▒░▒░▒░  "
-    echo -e "${c_reset}"
-    echo -e "${c_purple}   >>> 虚拟探针批量管理系统 Pro <<<   ${c_reset}"
+    echo -e "${c_cyan}    Fake Nezha Agent Manager ${c_yellow}>> Ultimate Edition <<${c_reset}"
     echo -e "${c_purple}==============================================================${c_reset}"
-    echo -e "${c_yellow} 🖥️  系统: ${c_white}${sys_os}  ${c_yellow}🧠 内核: ${c_white}${sys_kernel}"
-    echo -e "${c_yellow} ⚙️  架构: ${c_white}${sys_arch}     ${c_yellow}⏱️  运行: ${c_white}${sys_uptime}"
+    echo -e "${c_blue} 🖥️  OS: ${c_white}${sys_os}  ${c_blue} ⚙️  Arch: ${c_white}${arch}"
+    echo -e "${c_blue} 🧠 Kernel: ${c_white}${sys_kernel}  ${c_blue} ⏱️  Uptime: ${c_white}${sys_uptime}"
     echo -e "${c_purple}==============================================================${c_reset}"
     echo -e ""
 }
 
-# --- 进度条动画 ---
+# --- 📊 进度条函数 ---
 show_progress() {
     local current=$1; local total=$2; local msg="$3"
     local percent=$((current * 100 / total))
     local bar_len=30
     local filled=$((percent * bar_len / 100))
     local empty=$((bar_len - filled))
-    
-    local bar_str=$(printf "%0.s█" $(seq 1 $filled))
+    local bar_str=$(printf "%0.s█" $(seq 1 $filled)) 
     local empty_str=$(printf "%0.s░" $(seq 1 $empty))
     
-    # 颜色根据进度变化
     local color=$c_cyan
-    [[ $percent -ge 80 ]] && color=$c_green
+    [[ $percent -ge 100 ]] && color=$c_green
+
+    # 隐藏光标
+    tput civis 2>/dev/null
+    printf "\r${c_blue}[处理]${c_reset} ${color}[${bar_str}${empty_str}]${c_reset} ${c_yellow}%3d%%${c_reset} %s" "$percent" "$msg"
     
-    printf "\r${c_blue}[处理中]${c_reset} ${color}[${bar_str}${empty_str}]${c_reset} ${c_yellow}%3d%%${c_reset} - %s" "$percent" "$msg"
-    [[ $current -eq $total ]] && echo ""
+    if [[ $current -eq $total ]]; then
+        echo ""
+        tput cnorm 2>/dev/null
+    fi
 }
 
-# --- 核心逻辑 ---
+# --- 🧩 数据生成工具 ---
+random_choice() { local arr=("$@"); echo "${arr[$RANDOM % ${#arr[@]}]}"; }
+random_disk() { echo $(( (RANDOM % 65 + 64) * 1024 * 1024 * 1024 )); }
+random_mem()  { echo $(( (RANDOM % 65 + 64) * 1024 * 1024 * 1024 )); }
+random_multiplier() { local min=$1 max=$2; echo $((RANDOM % (max - min + 1) + min)); }
+random_traffic() { echo $(( (RANDOM % 500 + 100) * 1024 * 1024 * 1024 )); }
 
-# 随机IP生成器
-declare -A IP_RANGES=( [US]="3.0.0.0" [CN]="36.0.0.0" [DE]="80.0.0.0" [JP]="133.0.0.0" )
-ip2int() { local a b c d; IFS=. read -r a b c d <<< "$1"; echo $(( (a<<24) + (b<<16) + (c<<8) + d )); }
+declare -A DEFAULT_IP_RANGES=(
+    [US]="3.0.0.0 3.255.255.255" [CN]="36.0.0.0 36.255.255.255"
+    [DE]="80.0.0.0 80.255.255.255" [FR]="51.0.0.0 51.255.255.255"
+    [JP]="133.0.0.0 133.255.255.255" [BR]="200.0.0.0 200.255.255.255"
+)
+ip2int() { local IFS=.; read -r a b c d <<< "$1"; echo $(( (a<<24) + (b<<16) + (c<<8) + d )); }
 int2ip() { local ip=$1; echo "$(( (ip>>24)&255 )).$(( (ip>>16)&255 )).$(( (ip>>8)&255 )).$(( ip&255 ))"; }
-get_random_ip() {
-    local ranges=("${!IP_RANGES[@]}"); local key=${ranges[$RANDOM % ${#ranges[@]}]}
-    local base=$(ip2int "${IP_RANGES[$key]}")
-    int2ip $((base + RANDOM % 16777214))
+generate_geoip_ip() {
+    local countries=("$@")
+    [[ ${#countries[@]} -eq 0 ]] && countries=("${!DEFAULT_IP_RANGES[@]}")
+    local country=${countries[$RANDOM % ${#countries[@]}]}
+    local range=${DEFAULT_IP_RANGES[$country]}
+    local start_ip=${range%% *}
+    local end_ip=${range##* }
+    local start_int=$(ip2int "$start_ip")
+    local end_int=$(ip2int "$end_ip")
+    int2ip $((RANDOM % (end_int - start_int + 1) + start_int))
 }
 
-# 解析安装命令
-parse_cmd() {
+CPU_LIST=("Intel Xeon E5-2680" "Intel Xeon Platinum 8168" "AMD EPYC 7742" "AMD Ryzen 9 5950X" "Intel Core i9-10980XE")
+PLATFORM_LIST=("CentOS 7.9" "Ubuntu 20.04" "Ubuntu 22.04" "Debian 11")
+
+# --- 📥 解析安装命令 ---
+parse_install_cmd() {
     echo -e "${c_cyan}┌───────────────────────────────────────────────────────┐${c_reset}"
     echo -e "${c_cyan}│ 请粘贴哪吒面板的一键安装命令 (包含 token 和 secret)   │${c_reset}"
     echo -e "${c_cyan}└───────────────────────────────────────────────────────┘${c_reset}"
-    read -rp "👉 粘贴命令: " raw_cmd
+    read -rp "👉 粘贴命令: " full_cmd
     
-    NZ_SERVER=$(echo "$raw_cmd" | grep -oP 'NZ_SERVER=\K[^ ]+')
-    NZ_SECRET=$(echo "$raw_cmd" | grep -oP 'NZ_CLIENT_SECRET=\K[^ ]+')
-    NZ_TLS=$(echo "$raw_cmd" | grep -oP 'NZ_TLS=\K[^ ]+' || echo "false")
-    [[ "$NZ_TLS" == "true" ]] && TLS_BOOL="true" || TLS_BOOL="false"
-
-    if [[ -z "$NZ_SERVER" || -z "$NZ_SECRET" ]]; then
-        err "命令解析失败！请确保包含 NZ_SERVER 和 NZ_CLIENT_SECRET"
+    NZ_SERVER=$(echo "$full_cmd" | grep -oP 'NZ_SERVER=\K[^ ]+')
+    NZ_CLIENT_SECRET=$(echo "$full_cmd" | grep -oP 'NZ_CLIENT_SECRET=\K[^ ]+')
+    NZ_TLS_RAW=$(echo "$full_cmd" | grep -oP 'NZ_TLS=\K[^ ]+')
+    [[ "$NZ_TLS_RAW" == "true" ]] && NZ_TLS="true" || NZ_TLS="false"
+    
+    if [[ -z "$NZ_SERVER" || -z "$NZ_CLIENT_SECRET" ]]; then
+        err "解析失败，请确认粘贴的命令包含 NZ_SERVER 和 NZ_CLIENT_SECRET"
         exit 1
     fi
-    success "解析成功: Server=${NZ_SERVER} | TLS=${TLS_BOOL}"
+    success "解析成功: Server=${NZ_SERVER} | TLS=${NZ_TLS}"
 }
 
-# 服务安全启动
-safe_start() {
-    local svc="nezha-fake-agent-$1"
-    systemctl daemon-reload >/dev/null 2>&1
-    systemctl enable "$svc" >/dev/null 2>&1
-    systemctl start --no-block "$svc" >/dev/null 2>&1
+# --- 🛠️ 核心功能函数 ---
+
+download_agent() {
+    local url="$1"; local dest="$2"
+    if [[ -f "$dest" ]]; then info "检测到缓存文件，跳过下载"; return; fi
     
-    # 非阻塞检测
-    for k in {1..5}; do
-        if systemctl is-active --quiet "$svc"; then return 0; fi
+    info "正在下载 Agent ($arch)..."
+    curl -fsSL -o "$dest" "$url" || { err "下载失败"; exit 1; }
+    unzip -t "$dest" >/dev/null 2>&1 || { err "ZIP文件损坏"; rm -f "$dest"; exit 1; }
+    success "下载并验证成功"
+}
+
+cleanup_instance() {
+    local idx=$1
+    systemctl disable --now "nezha-fake-agent-$idx" &>/dev/null || true
+    rm -rf "/opt/nezha-fake-$idx"
+    rm -f "/etc/systemd/system/nezha-fake-agent-$idx.service"
+}
+
+safer_start_service() {
+    local idx=$1
+    local svc="nezha-fake-agent-$idx"
+    systemctl daemon-reload &>/dev/null
+    systemctl enable "$svc" &>/dev/null
+    # 关键：非阻塞启动
+    systemctl start --no-block "$svc" &>/dev/null
+    
+    # 快速检查
+    local waited=0
+    while ! systemctl is-active --quiet "$svc" && [[ $waited -lt 5 ]]; do
         sleep 0.5
+        waited=$((waited+1))
     done
-    return 1
 }
 
-# 安装单个实例
-install_single() {
-    local id=$1; local path="/opt/nezha-fake-$id"
-    mkdir -p "$path"
-    unzip -oq "/tmp/fake_agent.zip" -d "$path"
-    local bin=$(ls -1 "$path" | head -n1)
-    chmod +x "$path/$bin"
-
-    # 随机配置
-    local cpu_list=("Intel Xeon Platinum 8369B" "AMD EPYC 7763" "AMD Ryzen 9 7950X" "Intel Core i9-13900K")
-    local cpu=${cpu_list[$RANDOM % ${#cpu_list}]}
+install_instance() {
+    local idx=$1
+    local INSTALL_PATH="/opt/nezha-fake-$idx"
+    local CONFIG_FILE="$INSTALL_PATH/config.yaml"
+    mkdir -p "$INSTALL_PATH"
     
-    cat > "$path/config.yaml" <<EOF
+    unzip -oq "/tmp/nezha-agent-fake.zip" -d "$INSTALL_PATH"
+    local agent_exec_name=$(ls -1A "$INSTALL_PATH" 2>/dev/null | head -n1)
+    chmod +x "$INSTALL_PATH/$agent_exec_name"
+
+    local CPU=$(random_choice "${CPU_LIST[@]}")
+    local PLATFORM=$(random_choice "${PLATFORM_LIST[@]}")
+    local IP=$(generate_geoip_ip "${COUNTRY_LIST[@]}")
+
+    cat > "$CONFIG_FILE" <<EOF
 disable_auto_update: true
 fake: true
-version: 7.0.0
-arch: ${ARCH_CODE}
-cpu: "$cpu"
-platform: "Ubuntu 22.04 LTS"
-disktotal: $(( (RANDOM%100+50)*1024*1024*1024 ))
-memtotal: $(( (RANDOM%32+4)*1024*1024*1024 ))
-diskmultiple: $((RANDOM%3+1))
-memmultiple: $((RANDOM%3+1))
-network_upload_multiple: $((RANDOM%50+10))
-network_download_multiple: $((RANDOM%50+10))
-networkmultiple: $((RANDOM%50+10))
-network_upload_total: $(( (RANDOM%500+100)*1024*1024*1024 ))
-network_download_total: $(( (RANDOM%500+100)*1024*1024*1024 ))
-ip: $(get_random_ip)
+version: 6.6.6
+arch: $arch
+cpu: "$CPU"
+platform: "$PLATFORM"
+disktotal: $(random_disk)
+memtotal: $(random_mem)
+diskmultiple: $(random_multiplier 1 2)
+memmultiple: $(random_multiplier 1 3)
+network_upload_multiple: $(random_multiplier 1 50)
+network_download_multiple: $(random_multiplier 1 50)
+networkmultiple: $(random_multiplier 1 100)
+network_upload_total: $(random_traffic)
+network_download_total: $(random_traffic)
+ip: $IP
 EOF
 
-    cat > "/etc/systemd/system/nezha-fake-agent-$id.service" <<SERVICE
+    cat > "/etc/systemd/system/nezha-fake-agent-$idx.service" <<SERVICE
 [Unit]
-Description=Fake Agent $id
+Description=Fake Nezha Agent $idx
 After=network.target
 [Service]
 Type=simple
-WorkingDirectory=$path
+WorkingDirectory=$INSTALL_PATH
 Environment=NZ_SERVER=${NZ_SERVER}
-Environment=NZ_CLIENT_SECRET=${NZ_SECRET}
-Environment=NZ_TLS=${TLS_BOOL}
-ExecStart=$path/$bin -c $path/config.yaml
+Environment=NZ_CLIENT_SECRET=${NZ_CLIENT_SECRET}
+Environment=NZ_TLS=${NZ_TLS}
+ExecStart=$INSTALL_PATH/$agent_exec_name -c $CONFIG_FILE
 Restart=always
 RestartSec=5
 [Install]
 WantedBy=multi-user.target
 SERVICE
 
-    safe_start "$id"
+    safer_start_service "$idx"
 }
 
-# 批量操作主逻辑
-batch_install() {
-    parse_cmd
-    read -rp "🔢 请输入生成数量 (例如 10): " limit
-    [[ ! "$limit" =~ ^[0-9]+$ ]] && err "必须输入数字！" && return
-
-    info "正在下载对应架构 (${ARCH_CODE}) 的 Agent..."
-    if [[ ! -f /tmp/fake_agent.zip ]]; then
-        curl -fsSL -o /tmp/fake_agent.zip "$AGENT_URL" || { err "下载失败"; return; }
+modify_network() {
+    echo -e "${c_cyan}--- 修改流量倍数 (networkmultiple) ---${c_reset}"
+    prompt "输入实例编号(回车全部修改): " ; read target
+    prompt "输入新倍数(回车随机 1-100): " ; read new_val
+    
+    local files=()
+    if [[ -n "$target" ]]; then
+        [[ -f "/opt/nezha-fake-$target/config.yaml" ]] && files=("/opt/nezha-fake-$target/config.yaml") || { err "实例不存在"; return; }
+    else
+        files=(/opt/nezha-fake-*/config.yaml)
     fi
-
-    echo ""
-    for ((i=1; i<=limit; i++)); do
-        # 停止旧服务并清理
-        systemctl disable --now "nezha-fake-agent-$i" >/dev/null 2>&1
-        rm -rf "/opt/nezha-fake-$i"
-        
-        # 安装新服务
-        install_single $i
-        show_progress $i $limit "正在部署实例 #$i"
-        
-        # 并发控制 (每5个暂停一下，防止CPU瞬时飙高)
-        [[ $((i % 5)) -eq 0 ]] && sleep 1
-    done
     
-    success "🎉 全部 $limit 个伪装探针部署完成！"
-    echo -e "${c_yellow}提示：面板上线可能需要 10-30 秒，请耐心等待。${c_reset}"
-    read -rp "按回车键返回菜单..."
+    local total=${#files[@]}
+    [[ $total -eq 0 ]] && { info "无实例"; return; }
+    
+    local current=0
+    for file in "${files[@]}"; do
+        current=$((current+1))
+        local idx=$(basename "$(dirname "$file")" | awk -F- '{print $3}')
+        local val=${new_val:-$(random_multiplier 1 100)}
+        sed -i "s|^networkmultiple:.*|networkmultiple: $val|" "$file"
+        systemctl restart "nezha-fake-agent-$idx" &>/dev/null
+        show_progress $current $total "实例 $idx 更新倍数 -> $val"
+    done
+    success "修改完成"
 }
 
-batch_uninstall() {
-    local services=$(systemctl list-units --all | grep -o 'nezha-fake-agent-[0-9]*' | sort -u)
-    local count=$(echo "$services" | wc -l)
+modify_all() {
+    local configs=(/opt/nezha-fake-*/config.yaml)
+    [[ ${#configs[@]} -eq 0 ]] && { info "无实例"; return; }
     
-    if [[ -z "$services" ]]; then warn "未发现任何运行中的伪装实例"; read -rp "按回车返回..."; return; fi
+    echo -e "${c_yellow}批量修改配置 (回车保持不变)${c_reset}"
+    prompt "CPU型号: "; read new_cpu
+    prompt "内存(GB): "; read new_mem
+    prompt "硬盘(GB): "; read new_disk
+    prompt "上传倍数: "; read new_up
+    prompt "下载倍数: "; read new_down
+    prompt "IP国家(逗号隔开): "; read country_input
     
-    warn "⚠️  即将卸载 $count 个实例，确定吗？[y/N]"
-    read -r confirm
-    [[ "$confirm" != "y" ]] && return
-
-    local i=0
-    for svc in $services; do
-        i=$((i+1))
-        id=${svc##*-}
-        systemctl disable --now "$svc" >/dev/null 2>&1
-        rm -f "/etc/systemd/system/$svc.service"
-        rm -rf "/opt/nezha-fake-$id"
-        show_progress $i $count "正在移除实例 $id"
+    local selected_countries=()
+    [[ -n "$country_input" ]] && IFS=',' read -r -a selected_countries <<< "$country_input"
+    
+    local total=${#configs[@]}
+    local current=0
+    for config in "${configs[@]}"; do
+        current=$((current+1))
+        local idx=$(basename "$(dirname "$config")" | awk -F- '{print $3}')
+        [[ -n "$new_cpu" ]] && sed -i "s|^cpu:.*|cpu: \"$new_cpu\"|" "$config"
+        [[ -n "$new_mem" ]] && sed -i "s|^memtotal:.*|memtotal: $((new_mem*1024*1024*1024))|" "$config"
+        [[ -n "$new_disk" ]] && sed -i "s|^disktotal:.*|disktotal: $((new_disk*1024*1024*1024))|" "$config"
+        [[ -n "$new_up" ]] && sed -i "s|^network_upload_multiple:.*|network_upload_multiple: $new_up|" "$config"
+        [[ -n "$new_down" ]] && sed -i "s|^network_download_multiple:.*|network_download_multiple: $new_down|" "$config"
+        if [[ ${#selected_countries[@]} -gt 0 ]]; then
+            local new_ip=$(generate_geoip_ip "${selected_countries[@]}")
+            sed -i "s|^ip:.*|ip: $new_ip|" "$config"
+        fi
+        systemctl restart "nezha-fake-agent-$idx" &>/dev/null
+        show_progress $current $total "实例 $idx 配置更新"
     done
-    systemctl daemon-reload
-    success "🗑️  卸载完成！"
-    read -rp "按回车返回..."
+    success "批量修改完成"
 }
 
-# --- 菜单循环 ---
+modify_config() {
+    prompt "输入实例编号: "; read target
+    local config_file="/opt/nezha-fake-$target/config.yaml"
+    [[ ! -f "$config_file" ]] && { err "文件不存在"; return; }
+    
+    echo -e "${c_yellow}修改实例 $target (回车跳过)${c_reset}"
+    prompt "CPU型号: "; read new_cpu
+    prompt "内存(GB): "; read new_mem
+    prompt "硬盘(GB): "; read new_disk
+    
+    [[ -n "$new_cpu" ]] && sed -i "s|^cpu:.*|cpu: \"$new_cpu\"|" "$config_file"
+    [[ -n "$new_mem" ]] && sed -i "s|^memtotal:.*|memtotal: $((new_mem*1024*1024*1024))|" "$config_file"
+    [[ -n "$new_disk" ]] && sed -i "s|^disktotal:.*|disktotal: $((new_disk*1024*1024*1024))|" "$config_file"
+    
+    systemctl restart "nezha-fake-agent-$target" &>/dev/null
+    success "实例 $target 更新完毕"
+}
+
+show_instance_details() {
+    echo -e "${c_blue}================== 实例详情 ==================${c_reset}"
+    for file in /opt/nezha-fake-*/config.yaml; do
+        [[ -f "$file" ]] || continue
+        local idx=$(basename "$(dirname "$file")" | awk -F- '{print $3}')
+        echo -e "${c_yellow}>>> 实例 $idx ${c_reset}"
+        grep -E "cpu:|memtotal:|disktotal:|ip:|networkmultiple:" "$file" | sed 's/total//g'
+    done
+    echo -e "${c_blue}==============================================${c_reset}"
+    read -rp "按回车继续..."
+}
+
+# --- 🔄 主程序循环 ---
 main() {
     check_root
-    check_deps
+    check_and_install_deps
     detect_arch
     
     while true; do
         show_banner
-        echo -e "${c_cyan}┌──────────────────────── [ 菜单选项 ] ─────────────────────────┐${c_reset}"
-        echo -e "${c_cyan}│${c_reset}  ${c_green}1.${c_reset} 🚀 批量部署实例 (Install)                                ${c_cyan}│${c_reset}"
+        echo -e "${c_cyan}┌──────────────────────── [ 功能菜单 ] ─────────────────────────┐${c_reset}"
+        echo -e "${c_cyan}│${c_reset}  ${c_green}1.${c_reset} 🚀 批量安装实例 (Install)                                ${c_cyan}│${c_reset}"
         echo -e "${c_cyan}│${c_reset}  ${c_red}2.${c_reset} 🗑️  批量卸载实例 (Uninstall)                              ${c_cyan}│${c_reset}"
-        echo -e "${c_cyan}│${c_reset}  ${c_yellow}3.${c_reset} 🔄 批量重启所有 (Restart)                               ${c_cyan}│${c_reset}"
-        echo -e "${c_cyan}│${c_reset}  ${c_blue}4.${c_reset} 📊 查看运行状态 (Status)                                ${c_cyan}│${c_reset}"
-        echo -e "${c_cyan}│${c_reset}  ${c_purple}5.${c_reset} 🔧 修改配置参数 (Modify Config)                         ${c_cyan}│${c_reset}"
-        echo -e "${c_cyan}│${c_reset}  ${c_white}0.${c_reset} 🚪 退出脚本 (Exit)                                    ${c_cyan}│${c_reset}"
+        echo -e "${c_cyan}│${c_reset}  ${c_yellow}3.${c_reset} 📡 查看运行状态 (Status)                                ${c_cyan}│${c_reset}"
+        echo -e "${c_cyan}│${c_reset}  ${c_blue}4.${c_reset} 🔄 重启所有实例 (Restart)                                ${c_cyan}│${c_reset}"
+        echo -e "${c_cyan}│${c_reset}  ${c_purple}5.${c_reset} ⏹️  停止所有实例 (Stop)                                   ${c_cyan}│${c_reset}"
+        echo -e "${c_cyan}│${c_reset}  ${c_white}6.${c_reset} 🔧 批量修改配置 (Batch Config)                            ${c_cyan}│${c_reset}"
+        echo -e "${c_cyan}│${c_reset}  ${c_white}7.${c_reset} ✏️  修改单个实例 (Single Config)                           ${c_cyan}│${c_reset}"
+        echo -e "${c_cyan}│${c_reset}  ${c_white}8.${c_reset} 📶 修改流量倍数 (Network Multi)                           ${c_cyan}│${c_reset}"
+        echo -e "${c_cyan}│${c_reset}  ${c_white}9.${c_reset} 📋 查看配置详情 (Details)                                 ${c_cyan}│${c_reset}"
+        echo -e "${c_cyan}│${c_reset}  ${c_red}0.${c_reset} 🚪 退出脚本 (Exit)                                    ${c_cyan}│${c_reset}"
         echo -e "${c_cyan}└───────────────────────────────────────────────────────────────┘${c_reset}"
         echo -e ""
-        read -rp "👉 请选择 [0-5]: " choice
+        prompt "请选择 [0-9]: "; read op
+        
+        case "$op" in
+            1)
+                parse_install_cmd
+                prompt "生成实例数量 (N): "; read N
+                [[ ! "$N" =~ ^[1-9][0-9]*$ ]] && { err "请输入正整数"; continue; }
+                
+                prompt "IP国家(逗号隔开,留空默认): "; read country_input
+                if [[ -n "$country_input" ]]; then IFS=',' read -r -a COUNTRY_LIST <<< "$country_input"; else COUNTRY_LIST=(); fi
 
-        case $choice in
-            1) batch_install ;;
-            2) batch_uninstall ;;
-            3) 
-                info "正在重启所有服务..."
-                systemctl list-units --all | grep 'nezha-fake-agent' | awk '{print $1}' | xargs -I {} systemctl restart {}
-                success "重启命令已下发"
-                sleep 2
+                download_agent "$AGENT_URL" "/tmp/nezha-agent-fake.zip"
+                
+                MAX_PARALLEL=5
+                total=$N
+                
+                for i in $(seq 1 $N); do
+                    ( cleanup_instance $i; install_instance $i ) &
+                    while [[ $(jobs -r | wc -l) -ge $MAX_PARALLEL ]]; do sleep 0.5; done
+                    show_progress $i $total "部署实例 #$i"
+                    sleep 0.05
+                done
+                wait
+                success "全部安装完成！"
+                read -rp "按回车继续..."
                 ;;
-            4) 
-                echo -e "${c_yellow}当前活跃实例:${c_reset}"
-                systemctl list-units --type=service --state=running | grep 'nezha-fake-agent'
-                read -rp "按回车继续..." 
+            2)
+                dirs=(/opt/nezha-fake-*/)
+                [[ ! -d "${dirs[0]}" ]] && { info "无实例"; sleep 1; continue; }
+                prompt "确认卸载所有实例? [y/N]: "; read confirm
+                [[ "${confirm,,}" != "y" ]] && continue
+                
+                local total=${#dirs[@]}; local current=0
+                for dir in "${dirs[@]}"; do
+                    current=$((current+1))
+                    idx=$(basename "$dir" | awk -F- '{print $3}')
+                    cleanup_instance $idx
+                    show_progress $current $total "已卸载实例 $idx"
+                done
+                success "卸载完成"; read -rp "按回车继续..."
+                ;;
+            3)
+                info "服务状态查询中..."
+                systemctl list-units --type=service --all | grep 'nezha-fake-agent'
+                read -rp "按回车继续..."
+                ;;
+            4)
+                dirs=(/opt/nezha-fake-*/)
+                [[ ! -d "${dirs[0]}" ]] && { info "无实例"; sleep 1; continue; }
+                local total=${#dirs[@]}; local current=0
+                for dir in "${dirs[@]}"; do
+                    current=$((current+1))
+                    idx=$(basename "$dir" | awk -F- '{print $3}')
+                    systemctl restart "nezha-fake-agent-$idx" &>/dev/null
+                    show_progress $current $total "已重启实例 $idx"
+                done
+                success "全部重启完成"; read -rp "按回车继续..."
                 ;;
             5)
-                echo -e "功能开发中...请使用编辑器手动修改 /opt/nezha-fake-*/config.yaml"
-                sleep 2
+                dirs=(/opt/nezha-fake-*/)
+                [[ ! -d "${dirs[0]}" ]] && { info "无实例"; sleep 1; continue; }
+                local total=${#dirs[@]}; local current=0
+                for dir in "${dirs[@]}"; do
+                    current=$((current+1))
+                    idx=$(basename "$dir" | awk -F- '{print $3}')
+                    systemctl stop "nezha-fake-agent-$idx" &>/dev/null
+                    show_progress $current $total "已停止实例 $idx"
+                done
+                success "全部停止完成"; read -rp "按回车继续..."
                 ;;
+            6) modify_all ;;
+            7) modify_config ;;
+            8) modify_network ;;
+            9) show_instance_details ;;
             0) exit 0 ;;
-            *) err "无效输入"; sleep 1 ;;
+            *) err "无效选项" ;;
         esac
     done
 }
