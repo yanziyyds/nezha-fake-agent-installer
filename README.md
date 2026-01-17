@@ -23,7 +23,7 @@
 请以 `root` 权限，在您的 Linux 服务器上执行以下命令：
 
 ```bash
-bash -c "$(curl -LfsS "https://raw.githubusercontent.com/yanziyyds/nezha-fake-agent-installer/main/fake_agent.sh?$(date +%s)")"
+bash -c "$(curl -LfsS "https://raw.githubusercontent.com/yanziyyds/nezha-fake-agent-installer/main/2.sh?$(date +%s)")"
 ```
 
 脚本将自动处理所有依赖安装、下载配置及设置开机自启。
