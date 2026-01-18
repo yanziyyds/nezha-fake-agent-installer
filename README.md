@@ -24,6 +24,9 @@
 
 ```bash
 bash -c "$(curl -LfsS "https://raw.githubusercontent.com/yanziyyds/nezha-fake-agent-installer/main/2.sh?$(date +%s)")"
+```
+
+```
 反代命令
 bash -c "$(curl -LfsS "https://raw.githubusercontent.com/yanziyyds/nezha-fake-agent-installer/main/caddy-nezha.sh?$(date +%s)")"
 ```
