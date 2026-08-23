@@ -1,8 +1,8 @@
 #!/bin/bash
 #================================================================================
 # Name:        Cyberpunk Fake Nezha Manager (Ultimate Edition)
-# Description: 完整功能保留 + 炫酷UI + 架构修复 + 进程防阻塞
-# Version:     3.0 Ultimate
+# Description: 完整功能保留 + 炫酷UI + 架构修复 + 进程防阻塞 + 面板批量智能改名
+# Version:     3.1 Ultimate
 #================================================================================
 
 # --- 🎨 霓虹配色定义 ---
@@ -22,7 +22,7 @@ prompt() { echo -en "${c_purple}👉 $1${c_reset}"; }
 check_root() { [[ $EUID -ne 0 ]] && err "请以 root 权限运行！(sudo -i)" && exit 1; }
 
 check_and_install_deps() {
-    local deps=(curl unzip screen tput bc)
+    local deps=(curl unzip screen tput bc python3 python3-pip)
     local install_cmd=""
     
     if command -v apt-get >/dev/null 2>&1; then install_cmd="apt-get install -y"
@@ -36,6 +36,12 @@ check_and_install_deps() {
             $install_cmd $dep >/dev/null 2>&1
         }
     done
+
+    # 确保 python 运行库就绪
+    python3 -c "import requests, websocket" >/dev/null 2>&1 || {
+        info "正在配置 Python 网络组件 (requests, websocket-client)..."
+        pip3 install requests websocket-client -q >/dev/null 2>&1 || pip install requests websocket-client -q >/dev/null 2>&1
+    }
 }
 
 # --- ⚙️ 系统架构检测 (已修复) ---
@@ -50,7 +56,6 @@ detect_arch() {
         *arm*) arch="arm";;
         *) err "不支持架构: $raw_arch"; exit 1;;
     esac
-    # 动态拼接下载地址，修复 ARM 下载错误
     AGENT_URL="https://gh-proxy.com/https://github.com/dysf888/fake-nezha-agent-v1/releases/latest/download/nezha-agent-fake_linux_${arch}.zip"
 }
 
@@ -83,7 +88,6 @@ show_progress() {
     local color=$c_cyan
     [[ $percent -ge 100 ]] && color=$c_green
 
-    # 隐藏光标
     tput civis 2>/dev/null
     printf "\r${c_blue}[处理]${c_reset} ${color}[${bar_str}${empty_str}]${c_reset} ${c_yellow}%3d%%${c_reset} %s" "$percent" "$msg"
     
@@ -165,10 +169,8 @@ safer_start_service() {
     local svc="nezha-fake-agent-$idx"
     systemctl daemon-reload &>/dev/null
     systemctl enable "$svc" &>/dev/null
-    # 关键：非阻塞启动
     systemctl start --no-block "$svc" &>/dev/null
     
-    # 快速检查
     local waited=0
     while ! systemctl is-active --quiet "$svc" && [[ $waited -lt 5 ]]; do
         sleep 0.5
@@ -321,6 +323,118 @@ show_instance_details() {
     read -rp "按回车继续..."
 }
 
+# --- 🏷️ 新增：面板智能批量改名（国家 机型 核心+内存） ---
+rename_on_dashboard() {
+    echo -e "${c_purple}==============================================================${c_reset}"
+    echo -e "${c_cyan}       🏷️ 哪吒面板批量智能重命名 [国家 机型 核心+内存]${c_reset}"
+    echo -e "${c_purple}==============================================================${c_reset}"
+    
+    prompt "输入哪吒面板地址 (例如: https://arm.weiaita.top): " ; read panel_url
+    panel_url="${panel_url%/}"
+    [[ -z "$panel_url" ]] && { err "面板地址不能为空！"; read -rp "按回车返回..."; return; }
+    
+    prompt "输入面板 API Token (含 nezha:server:write 权限): " ; read api_token
+    [[ -z "$api_token" ]] && { err "API Token 不能为空！"; read -rp "按回车返回..."; return; }
+    
+    prompt "排除的服务器 ID (逗号隔开, 默认 1,2,3): " ; read exclude_ids
+    exclude_ids="${exclude_ids:-1,2,3}"
+
+    info "正在连接面板获取实时硬件与地区信息并批量重命名..."
+    
+    python3 - <<EOF
+import sys, json, requests, websocket
+
+panel_url = "$panel_url"
+token = "$api_token"
+exclude_str = "$exclude_ids"
+exclude_list = [int(x.strip()) for x in exclude_str.split(",") if x.strip().isdigit()]
+
+headers = {
+    "Authorization": f"Bearer {token}",
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+}
+
+COUNTRY_MAP = {
+    "sg": "新加坡", "de": "德国", "gb": "英国", "br": "巴西",
+    "jp": "日本", "cn": "中国", "mx": "墨西哥", "co": "哥伦比亚",
+    "us": "美国", "hk": "香港", "tw": "台湾", "kr": "韩国", "fr": "法国"
+}
+
+def clean_cpu(cpu_str):
+    if not cpu_str: return "通用"
+    c = cpu_str.strip()
+    c = c.replace("Intel(R) Xeon(R)", "Xeon").replace("Intel Xeon Platinum ", "Xeon-")
+    c = c.replace("Intel Xeon ", "Xeon-").replace("Intel Core ", "")
+    c = c.replace("AMD Ryzen 9 ", "R9-").replace("AMD Ryzen ", "Ryzen-")
+    c = c.replace("AMD EPYC ", "EPYC-").replace("Processor", "").strip()
+    return c
+
+ws_protocol = "wss" if panel_url.startswith("https") else "ws"
+domain = panel_url.split("://")[1]
+ws_url = f"{ws_protocol}://{domain}/api/v1/ws/server"
+
+servers_data = []
+try:
+    ws = websocket.create_connection(ws_url, timeout=6)
+    msg = ws.recv()
+    ws.close()
+    data = json.loads(msg)
+    servers_data = data.get("servers", [])
+except Exception as e:
+    print(f"\033[1;31m[-] 连接 WebSocket 失败: {e}\033[0m")
+    sys.exit(1)
+
+if not servers_data:
+    print("\033[1;33m[-] 未获取到任何在线服务器！\033[0m")
+    sys.exit(0)
+
+success_count = 0
+fail_count = 0
+print(f"\033[1;36m[*] 获取到 {len(servers_data)} 台服务器，开始批量修改...\033[0m\n")
+
+for s in servers_data:
+    s_id = s.get("id")
+    if s_id in exclude_list:
+        print(f"\033[1;35m⏩ 保留服务器 ID #{s_id:02d} [{s.get('name')}]\033[0m")
+        continue
+
+    cc = s.get("country_code", "").lower()
+    country = COUNTRY_MAP.get(cc, cc.upper())
+
+    cpus = s.get("host", {}).get("cpu", [])
+    cpu_raw = cpus[0] if cpus else ""
+    cpu_model = clean_cpu(cpu_raw)
+    cores = len(cpus) if isinstance(cpus, list) else 1
+
+    mem_total = s.get("host", {}).get("mem_total", 0)
+    mem_gb = round(mem_total / (1024**3))
+
+    new_name = f"{country} {cpu_model} {cores}C+{mem_gb}G"
+    
+    url = f"{panel_url}/api/v1/server/{s_id}"
+    payload = {"name": new_name}
+    
+    try:
+        r = requests.patch(url, json=payload, headers=headers, timeout=8)
+        res = r.json() if r.text else {}
+        if r.status_code in [200, 204] and res.get("success"):
+            print(f"\033[1;32m[+] ID #{s_id:02d} -> 【{new_name}】 成功\033[0m")
+            success_count += 1
+        else:
+            print(f"\033[1;31m[-] ID #{s_id:02d} -> 【{new_name}】 失败: {res.get('error', r.text[:50])}\033[0m")
+            fail_count += 1
+    except Exception as e:
+        print(f"\033[1;31m[-] ID #{s_id:02d} 异常: {e}\033[0m")
+        fail_count += 1
+
+print(f"\n\033[1;32m[*] 执行完成: 成功 {success_count} 台，失败 {fail_count} 台！\033[0m")
+EOF
+
+    echo ""
+    read -rp "按回车返回菜单..."
+}
+
 # --- 🔄 主程序循环 ---
 main() {
     check_root
@@ -339,10 +453,11 @@ main() {
         echo -e "${c_cyan}│${c_reset}  ${c_white}7.${c_reset} ✏️  修改单个实例 (Single Config)                           ${c_cyan}│${c_reset}"
         echo -e "${c_cyan}│${c_reset}  ${c_white}8.${c_reset} 📶 修改流量倍数 (Network Multi)                           ${c_cyan}│${c_reset}"
         echo -e "${c_cyan}│${c_reset}  ${c_white}9.${c_reset} 📋 查看配置详情 (Details)                                 ${c_cyan}│${c_reset}"
+        echo -e "${c_cyan}│${c_reset}  ${c_yellow}10.${c_reset} 🏷️  面板批量改名 (Rename on Panel) [国家+机型+规格]     ${c_cyan}│${c_reset}"
         echo -e "${c_cyan}│${c_reset}  ${c_red}0.${c_reset} 🚪 退出脚本 (Exit)                                    ${c_cyan}│${c_reset}"
         echo -e "${c_cyan}└───────────────────────────────────────────────────────────────┘${c_reset}"
         echo -e ""
-        prompt "请选择 [0-9]: "; read op
+        prompt "请选择 [0-10]: "; read op
         
         case "$op" in
             1)
@@ -416,6 +531,7 @@ main() {
             7) modify_config ;;
             8) modify_network ;;
             9) show_instance_details ;;
+            10) rename_on_dashboard ;;
             0) exit 0 ;;
             *) err "无效选项" ;;
         esac
