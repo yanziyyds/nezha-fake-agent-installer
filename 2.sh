@@ -4,7 +4,7 @@
 # Description: 2.sh 主线合并版：完整功能保留 + 炫酷UI + 架构修复 + 进程防阻塞
 #              + 面板批量智能改名 + 3.sh 的名称前缀 / 本地批量改名
 #              旧版 3.sh / 4.sh 已合并进本文件，不再单独保留
-# Version:     4.0 Merged
+# Version:     4.1 Merged
 #================================================================================
 
 # 不启用 set -e：交互菜单需要容忍 systemctl 等命令的非致命失败；
@@ -33,7 +33,11 @@ check_and_install_deps() {
     local dep
 
     for dep in "${deps[@]}"; do
-        command -v "$dep" >/dev/null 2>&1 || missing+=("$dep")
+        # python3-pip 是包名、不是可执行文件：对应命令是 pip3，
+        # 直接查它会永远判为缺失、每次都重复 apt 安装
+        local probe="$dep"
+        [[ "$dep" == "python3-pip" ]] && probe="pip3"
+        command -v "$probe" >/dev/null 2>&1 || missing+=("$dep")
     done
 
     if [[ ${#missing[@]} -gt 0 ]]; then
@@ -41,7 +45,12 @@ check_and_install_deps() {
         if command -v apt-get >/dev/null 2>&1; then
             install_cmd="apt-get install -y"
             info "正在更新软件包索引..."
-            apt-get update >/dev/null 2>&1 || true
+            # 挂掉的镜像源会让 update 无限等待（VM 实测卡 420 秒）：有 timeout 就限 120 秒
+            if command -v timeout >/dev/null 2>&1; then
+                timeout 120 apt-get update >/dev/null 2>&1 || true
+            else
+                apt-get update >/dev/null 2>&1 || true
+            fi
         elif command -v dnf >/dev/null 2>&1; then install_cmd="dnf install -y"
         elif command -v yum >/dev/null 2>&1; then install_cmd="yum install -y"
         else err "无法自动安装依赖，请手动安装: ${missing[*]}"; exit 1; fi
@@ -208,6 +217,31 @@ safer_start_service() {
     while ! systemctl is-active --quiet "$svc" && [[ $waited -lt 5 ]]; do
         sleep 0.5
         waited=$((waited+1))
+    done
+}
+
+# agent 首次运行会重写 config.yaml 并丢掉安装时写的 name:（VM 实测）；
+# 等首次重写完成后再写回一次，之后重启仍保留（与菜单 11 改名后重启仍保留的实测行为一致）。
+# 本修复未经 VM 复测，推 main 前须用假面板在 VM 里重跑安装验证。
+reapply_install_names() {
+    local count=$1 prefix=${2:-Phantom}
+    local i cfg waited=0
+    # 等 agent 完成首次重写（表现为 name 行消失）；最多等 15 秒，等不到也照常写回
+    while [[ $waited -lt 15 ]]; do
+        local dropped=0
+        for i in $(seq 1 $count); do
+            cfg="/opt/nezha-fake-$i/config.yaml"
+            [[ -f "$cfg" ]] && ! grep -q '^name:' "$cfg" && dropped=1
+        done
+        [[ $dropped -eq 1 ]] && break
+        sleep 1; waited=$((waited+1))
+    done
+    for i in $(seq 1 $count); do
+        cfg="/opt/nezha-fake-$i/config.yaml"
+        [[ -f "$cfg" ]] || continue
+        sed -i '/^name:/d' "$cfg"
+        sed -i "1i name: \"${prefix}-${i}\"" "$cfg"
+        systemctl restart "nezha-fake-agent-$i" &>/dev/null || true
     done
 }
 
@@ -536,7 +570,7 @@ main() {
         echo -e "${c_cyan}│${c_reset}  ${c_red}0.${c_reset} 🚪 退出脚本 (Exit)                                    ${c_cyan}│${c_reset}"
         echo -e "${c_cyan}└───────────────────────────────────────────────────────────────┘${c_reset}"
         echo -e ""
-        prompt "请选择 [0-11]: "; read op
+        prompt "请选择 [0-11]: "; read op || { echo ""; info "输入已结束，退出脚本"; exit 0; }
 
         case "$op" in
             1)
@@ -562,6 +596,7 @@ main() {
                     sleep 0.05
                 done
                 wait
+                reapply_install_names "$N" "${NAME_PREFIX:-Phantom}"
                 success "全部安装完成！"
                 read -rp "按回车继续..."
                 ;;
